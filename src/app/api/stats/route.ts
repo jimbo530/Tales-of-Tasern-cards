@@ -316,11 +316,10 @@ export async function GET() {
     const polyPairInfos = parsePairInfos(KNOWN_LP_PAIRS.polygon, polyPairStaticResults);
 
     // Debug: check Base + Polygon pair data
-    const basePairsWithReserves = basePairInfos.filter(p => p.reserve0 > 0n);
-    console.log("[API] Base pairs with reserves:", basePairsWithReserves.length, "/", basePairInfos.length);
+    const baseWithReserves = basePairInfos.filter(p => p.reserve0 > 0n);
+    console.log("[API] Base pairs with reserves:", baseWithReserves.length, "/", basePairInfos.length);
     console.log("[API] Base LP balance results:", baseLpBalanceResults.filter(r => r.status === "success").length, "/", baseLpBalanceResults.length, "successful");
-    const baseNonZeroBalances = baseLpBalanceResults.filter(r => r.status === "success" && (r.result as bigint) > 0n);
-    console.log("[API] Base non-zero LP balances:", baseNonZeroBalances.length);
+    console.log("[API] Base non-zero LP balances:", baseLpBalanceResults.filter(r => r.status === "success" && (r.result as bigint) > 0n).length);
     console.log("[API] Polygon pairs with reserves:", polyPairInfos.filter(p => p.reserve0 > 0n).length, "/", polyPairInfos.length);
     console.log("[API] NFTs:", GAME_NFTS.length, "| Base LP pairs:", KNOWN_LP_PAIRS.base.length, "| Polygon LP pairs:", KNOWN_LP_PAIRS.polygon.length);
 
