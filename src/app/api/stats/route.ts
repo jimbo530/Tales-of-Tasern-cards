@@ -686,6 +686,17 @@ export async function GET() {
       tokenBreakdown: Object.values(tokenBreakdown),
       prices: { btcHigh24h, ethHigh24h, polHigh24h, mftLow24h },
       updatedAt: new Date().toISOString(),
+      _debug: {
+        nftCount: GAME_NFTS.length,
+        baseLpPairs: KNOWN_LP_PAIRS.base.length,
+        polyLpPairs: KNOWN_LP_PAIRS.polygon.length,
+        basePairsWithReserves: baseWithReserves.length,
+        baseBalanceSuccess: baseLpBalanceResults.filter(r => r.status === "success").length,
+        baseBalanceTotal: baseLpBalanceResults.length,
+        baseNonZero: baseLpBalanceResults.filter(r => r.status === "success" && (r.result as bigint) > 0n).length,
+        polyPairsWithReserves: polyPairInfos.filter(p => p.reserve0 > 0n).length,
+        basePairSample: basePairInfos.slice(0, 3).map(p => ({ addr: p.address, t0: p.token0.slice(0,10), t1: p.token1.slice(0,10), r0: Number(p.reserve0), r1: Number(p.reserve1) })),
+      },
     }, {
       headers: { "Cache-Control": "public, s-maxage=86400, stale-while-revalidate=3600" },
     });
