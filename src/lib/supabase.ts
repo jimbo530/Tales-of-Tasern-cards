@@ -125,6 +125,52 @@ export async function getActiveListings(): Promise<Listing[]> {
   return (data ?? []) as Listing[];
 }
 
+// ── Shared NFT/LP Registry ─────────────────────────────────────────────────
+
+export type NftRow = {
+  id: string;
+  name: string;
+  contract_address: string;
+  chain: "base" | "polygon";
+};
+
+export type LpPairRow = {
+  id: string;
+  pair_address: string;
+  chain: "base" | "polygon";
+  label: string | null;
+};
+
+let _nftCache: NftRow[] | null = null;
+let _lpCache: { base: string[]; polygon: string[] } | null = null;
+
+export async function getSharedNfts(): Promise<NftRow[]> {
+  if (_nftCache) return _nftCache;
+  const { data, error } = await supabase
+    .from("nfts")
+    .select("id, name, contract_address, chain")
+    .order("created_at", { ascending: true });
+  if (error) { console.error("getSharedNfts:", error); return []; }
+  _nftCache = (data ?? []) as NftRow[];
+  return _nftCache;
+}
+
+export async function getSharedLpPairs(): Promise<{ base: `0x${string}`[]; polygon: `0x${string}`[] }> {
+  if (_lpCache) return _lpCache as { base: `0x${string}`[]; polygon: `0x${string}`[] };
+  const { data, error } = await supabase
+    .from("lp_pairs")
+    .select("pair_address, chain")
+    .order("created_at", { ascending: true });
+  if (error) { console.error("getSharedLpPairs:", error); return { base: [], polygon: [] }; }
+  const rows = (data ?? []) as LpPairRow[];
+  const result = {
+    base: rows.filter(r => r.chain === "base").map(r => r.pair_address as `0x${string}`),
+    polygon: rows.filter(r => r.chain === "polygon").map(r => r.pair_address as `0x${string}`),
+  };
+  _lpCache = { base: result.base as string[], polygon: result.polygon as string[] };
+  return result;
+}
+
 // ── Adventure Saves ─────────────────────────────────────────────────────────
 
 export type AdventureSave = {
