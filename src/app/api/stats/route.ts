@@ -315,6 +315,15 @@ export async function GET() {
     const basePairInfos = parsePairInfos(KNOWN_LP_PAIRS.base, basePairStaticResults);
     const polyPairInfos = parsePairInfos(KNOWN_LP_PAIRS.polygon, polyPairStaticResults);
 
+    // Debug: check Base + Polygon pair data
+    const basePairsWithReserves = basePairInfos.filter(p => p.reserve0 > 0n);
+    console.log("[API] Base pairs with reserves:", basePairsWithReserves.length, "/", basePairInfos.length);
+    console.log("[API] Base LP balance results:", baseLpBalanceResults.filter(r => r.status === "success").length, "/", baseLpBalanceResults.length, "successful");
+    const baseNonZeroBalances = baseLpBalanceResults.filter(r => r.status === "success" && (r.result as bigint) > 0n);
+    console.log("[API] Base non-zero LP balances:", baseNonZeroBalances.length);
+    console.log("[API] Polygon pairs with reserves:", polyPairInfos.filter(p => p.reserve0 > 0n).length, "/", polyPairInfos.length);
+    console.log("[API] NFTs:", GAME_NFTS.length, "| Base LP pairs:", KNOWN_LP_PAIRS.base.length, "| Polygon LP pairs:", KNOWN_LP_PAIRS.polygon.length);
+
     // Derive USD prices for game tokens from stablecoin pairs
     // USDGLO = $1, USDC = $1, USDT = $1
     const USDGLO = "0x4f604735c1cf31399c6e711d5962b2b3e0225ad3";
