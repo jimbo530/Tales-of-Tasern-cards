@@ -23,6 +23,7 @@ const CONTRACTS: Record<string, { address: `0x${string}`; abi: readonly any[]; c
   azos:    { address: "0xD7C584D40216576f1d8651Eab8bEF9DE69497666", abi: POWERUP_ABI, chainId: 8453 },
   egp:     { address: "0x79F9208847848Ce4a0CF107d1115aa5a3c5CE849", abi: POWERUP_ABI, chainId: 8453 },
   wethegp: { address: "0x127AE66CdFA262c8A9CBA82F43da2953411D6Cf4", abi: POWERUP_ABI, chainId: 8453 },
+  char:    { address: "0x731CA534ab575E21e0847894Cf9EfdD736935a93", abi: POWERUP_ABI, chainId: 8453 },
   // Polygon (chainId 137)
   pol_egpusdglo: { address: "0x627E6a6093403f415051755e3a85D85419cb0aBD", abi: POWERUP_ABI, chainId: 137 },
 };
@@ -51,7 +52,7 @@ const STAT_OPTIONS: StatOption[] = [
   { key: "fAtk", label: "🔥 FATK", desc: "Fire attack", tokens: "LANTERN + DDD LP", color: "rgba(251,146,60,0.8)", chain: "polygon", deployed: false },
   { key: "mDef", label: "🛡️ MDEF", desc: "Magic defense", tokens: "PR24 + DDD LP", color: "rgba(45,212,191,0.8)", chain: "polygon", deployed: false },
   { key: "mana", label: "💧 Mana", desc: "Powers up all magic stats", tokens: "NCT + DDD LP", color: "rgba(96,165,250,0.8)", chain: "polygon", deployed: false },
-  { key: "charMultiplier", label: "♦ Multiplier", desc: "Boosts all stats", tokens: "CHAR + USDC LP", color: "rgba(167,139,250,0.8)", chain: "polygon", deployed: false },
+  { key: "char", label: "♦ CHAR", desc: "Boosts all stats", tokens: "CHAR + MfT LP", color: "rgba(167,139,250,0.8)", chain: "base", deployed: true },
 ];
 
 function HeroPortrait({ character }: { character: NftCharacter }) {
