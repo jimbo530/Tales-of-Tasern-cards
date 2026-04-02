@@ -1,9 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { useAccount, useWalletClient } from "wagmi";
+import { useAccount, useChainId, useSwitchChain, useWalletClient } from "wagmi";
 import { parseEther } from "viem";
-import { base } from "wagmi/chains";
+import { base, polygon } from "wagmi/chains";
 import type { NftCharacter } from "@/hooks/useNftStats";
 import { useNftImage } from "@/hooks/useNftImage";
 
@@ -23,7 +23,8 @@ const CONTRACTS: Record<string, { address: `0x${string}`; abi: readonly any[]; c
   azos:    { address: "0xD7C584D40216576f1d8651Eab8bEF9DE69497666", abi: POWERUP_ABI, chainId: 8453 },
   egp:     { address: "0x79F9208847848Ce4a0CF107d1115aa5a3c5CE849", abi: POWERUP_ABI, chainId: 8453 },
   wethegp: { address: "0x127AE66CdFA262c8A9CBA82F43da2953411D6Cf4", abi: POWERUP_ABI, chainId: 8453 },
-  char:    { address: "0x731CA534ab575E21e0847894Cf9EfdD736935a93", abi: POWERUP_ABI, chainId: 8453 },
+  char:    { address: "0x97eC03aE9072923937dDBCFBf4D05c8000C13431", abi: POWERUP_ABI, chainId: 8453 },
+  burgers: { address: "0xDe76722Ec72F86D64B54DbB11A5c9211FE6FC8FF", abi: POWERUP_ABI, chainId: 8453 },
   // Polygon (chainId 137)
   pol_egpusdglo: { address: "0x627E6a6093403f415051755e3a85D85419cb0aBD", abi: POWERUP_ABI, chainId: 137 },
 };
@@ -53,6 +54,7 @@ const STAT_OPTIONS: StatOption[] = [
   { key: "mDef", label: "🛡️ MDEF", desc: "Magic defense", tokens: "PR24 + DDD LP", color: "rgba(45,212,191,0.8)", chain: "polygon", deployed: false },
   { key: "mana", label: "💧 Mana", desc: "Powers up all magic stats", tokens: "NCT + DDD LP", color: "rgba(96,165,250,0.8)", chain: "polygon", deployed: false },
   { key: "char", label: "♦ CHAR", desc: "Boosts all stats", tokens: "CHAR + MfT LP", color: "rgba(167,139,250,0.8)", chain: "base", deployed: true },
+  { key: "burgers", label: "🍔 BURGERS", desc: "DEX + CON via BURGERS/MfT", tokens: "BURGERS + MfT LP", color: "rgba(251,146,60,0.8)", chain: "base", deployed: true },
 ];
 
 function HeroPortrait({ character }: { character: NftCharacter }) {
@@ -270,23 +272,41 @@ export function PowerUp({ characters, onBack, onStatsRefresh }: Props) {
 const MAX_ETH = 0.001;
 
 function PowerUpPayment({ contract, nftContract, heroName, statLabel, onStatsRefresh }: {
-  contract: { address: `0x${string}`; abi: readonly any[] };
+  contract: { address: `0x${string}`; abi: readonly any[]; chainId: number };
   nftContract: `0x${string}`;
   heroName: string;
   statLabel: string;
   onStatsRefresh?: () => Promise<void>;
 }) {
   const { isConnected } = useAccount();
+  const currentChainId = useChainId();
+  const { switchChainAsync } = useSwitchChain();
   const { data: client, isLoading: walletLoading } = useWalletClient();
   const [status, setStatus] = useState<string | null>(null);
   const [txHash, setTxHash] = useState<string | null>(null);
   const [amount, setAmount] = useState("0.0005");
 
+  const needsChainSwitch = currentChainId !== contract.chainId;
+  const chainName = contract.chainId === 137 ? "Polygon" : "Base";
+  const nativeCurrency = contract.chainId === 137 ? "POL" : "ETH";
+
   async function handlePowerUp(amt: string) {
     if (!client) { setStatus("Wallet loading — try again in a moment"); return; }
     setAmount(amt);
-    setStatus("Confirm in your wallet — sending ETH...");
     setTxHash(null);
+
+    // Auto-switch chain if needed
+    if (currentChainId !== contract.chainId) {
+      setStatus(`Switching to ${chainName}...`);
+      try {
+        await switchChainAsync({ chainId: contract.chainId });
+      } catch (e: any) {
+        setStatus(`Failed to switch to ${chainName}: ${e.shortMessage ?? e.message}`);
+        return;
+      }
+    }
+
+    setStatus(`Confirm in your wallet — sending ${nativeCurrency}...`);
 
     try {
       const hash = await client.writeContract({
@@ -295,6 +315,7 @@ function PowerUpPayment({ contract, nftContract, heroName, statLabel, onStatsRef
         functionName: "powerUp",
         args: [nftContract],
         value: parseEther(amt),
+        chain: contract.chainId === 137 ? polygon : base,
       });
       setTxHash(hash);
       setStatus("⚔️ Power up complete! Refreshing stats...");
@@ -319,7 +340,12 @@ function PowerUpPayment({ contract, nftContract, heroName, statLabel, onStatsRef
         <p className="text-center text-xs" style={{ color: 'rgba(220,38,38,0.7)' }}>Connect wallet first</p>
       ) : (
         <div className="flex flex-col gap-3">
-          <p className="text-center text-xs" style={{ color: 'rgba(201,168,76,0.5)' }}>Pay with ETH on Base — auto-swaps to LP tokens</p>
+          {needsChainSwitch && (
+            <p className="text-center text-xs font-bold" style={{ color: 'rgba(251,191,36,0.8)' }}>
+              Wallet on wrong chain — will auto-switch to {chainName} when you pay
+            </p>
+          )}
+          <p className="text-center text-xs" style={{ color: 'rgba(201,168,76,0.5)' }}>Pay with {nativeCurrency} on {chainName} — auto-swaps to LP tokens</p>
 
           <div className="flex gap-2 w-full">
             {["0.0005", "0.001", "0.0025"].map(amt => (
@@ -338,9 +364,9 @@ function PowerUpPayment({ contract, nftContract, heroName, statLabel, onStatsRef
             </p>
           )}
           {txHash && (
-            <a href={`https://basescan.org/tx/${txHash}`} target="_blank" rel="noopener noreferrer"
+            <a href={`${contract.chainId === 137 ? "https://polygonscan.com" : "https://basescan.org"}/tx/${txHash}`} target="_blank" rel="noopener noreferrer"
               className="text-center text-xs hover:underline" style={{ color: 'rgba(96,165,250,0.8)' }}>
-              View on BaseScan ↗
+              View on {contract.chainId === 137 ? "PolygonScan" : "BaseScan"} ↗
             </a>
           )}
         </div>

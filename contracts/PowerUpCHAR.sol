@@ -2,81 +2,64 @@
 pragma solidity ^0.8.34;
 
 interface IRouter {
-    function swapExactETHForTokens(
-        uint amountOutMin,
-        address[] calldata path,
-        address to,
-        uint deadline
-    ) external payable returns (uint[] memory amounts);
-
-    function addLiquidity(
-        address tokenA,
-        address tokenB,
-        uint amountADesired,
-        uint amountBDesired,
-        uint amountAMin,
-        uint amountBMin,
-        address to,
-        uint deadline
-    ) external returns (uint amountA, uint amountB, uint liquidity);
+    function WETH() external pure returns (address);
+    function swapExactETHForTokens(uint amountOutMin, address[] calldata path, address to, uint deadline) external payable returns (uint[] memory);
+    function swapExactTokensForTokens(uint amountIn, uint amountOutMin, address[] calldata path, address to, uint deadline) external returns (uint[] memory);
+    function addLiquidity(address tokenA, address tokenB, uint amountADesired, uint amountBDesired, uint amountAMin, uint amountBMin, address to, uint deadline) external returns (uint, uint, uint);
 }
 
 interface IERC20 {
-    function balanceOf(address account) external view returns (uint256);
-    function approve(address spender, uint256 amount) external returns (bool);
-    function transfer(address to, uint256 amount) external returns (bool);
+    function balanceOf(address) external view returns (uint);
+    function approve(address, uint) external returns (bool);
+    function transfer(address, uint) external returns (bool);
 }
 
+/// @title PowerUp CHAR — ETH → CHAR/MfT LP → NFT contract
+/// @notice Routes through EGP since no direct WETH/CHAR or WETH/MfT pairs exist
 contract PowerUpCHAR {
+    IRouter public constant router = IRouter(0x4752ba5DBc23f44D87826276BF6Fd6b1C372aD24);
+    address public constant WETH = 0x4200000000000000000000000000000000000006;
+    address public constant EGP  = 0xc1BA76771bbF0dD841347630E57c793F9d5ACcEe;
     address public constant CHAR = 0x20b048fA035D5763685D695e66aDF62c5D9F5055;
     address public constant MFT  = 0x8FB87d13B40B1A67B22ED1a17e2835fe7e3a9bA3;
-    address public constant WETH = 0x4200000000000000000000000000000000000006;
-    IRouter public constant router = IRouter(0x4752ba5DBc23f44D87826276BF6Fd6b1C372aD24);
 
-    event PoweredUp(address indexed nft, address indexed player, uint256 liquidity);
+    event PoweredUp(address indexed nft, address indexed player, uint liquidity);
 
     receive() external payable {}
 
     function powerUp(address nftContract) external payable {
-        require(msg.value > 0, "no ETH");
+        require(msg.value > 0, "No ETH");
 
-        uint256 half = msg.value / 2;
+        // Step 1: Swap ALL ETH → MfT via path WETH → EGP → MfT
+        address[] memory pathToMft = new address[](3);
+        pathToMft[0] = WETH;
+        pathToMft[1] = EGP;
+        pathToMft[2] = MFT;
+        router.swapExactETHForTokens{value: msg.value}(0, pathToMft, address(this), block.timestamp + 300);
 
-        // Swap first half ETH -> CHAR
-        address[] memory pathA = new address[](2);
-        pathA[0] = WETH;
-        pathA[1] = CHAR;
-        router.swapExactETHForTokens{value: half}(0, pathA, address(this), block.timestamp + 300);
+        uint mftBal = IERC20(MFT).balanceOf(address(this));
+        uint halfMft = mftBal / 2;
 
-        // Swap remaining ETH -> MfT
-        address[] memory pathB = new address[](2);
-        pathB[0] = WETH;
-        pathB[1] = MFT;
-        router.swapExactETHForTokens{value: msg.value - half}(0, pathB, address(this), block.timestamp + 300);
+        // Step 2: Swap half MfT → CHAR
+        IERC20(MFT).approve(address(router), halfMft);
+        address[] memory pathToChar = new address[](2);
+        pathToChar[0] = MFT;
+        pathToChar[1] = CHAR;
+        router.swapExactTokensForTokens(halfMft, 0, pathToChar, address(this), block.timestamp + 300);
 
-        // Get balances
-        uint256 charBal = IERC20(CHAR).balanceOf(address(this));
-        uint256 mftBal  = IERC20(MFT).balanceOf(address(this));
-
-        // Approve router for both tokens
+        // Step 3: Add CHAR/MfT liquidity — LP tokens go to the NFT
+        uint charBal = IERC20(CHAR).balanceOf(address(this));
+        uint mftRem  = IERC20(MFT).balanceOf(address(this));
         IERC20(CHAR).approve(address(router), charBal);
-        IERC20(MFT).approve(address(router), mftBal);
+        IERC20(MFT).approve(address(router), mftRem);
+        (,, uint liq) = router.addLiquidity(CHAR, MFT, charBal, mftRem, 0, 0, nftContract, block.timestamp + 300);
 
-        // Add CHAR/MfT liquidity
-        (,, uint256 liquidity) = router.addLiquidity(
-            CHAR, MFT,
-            charBal, mftBal,
-            0, 0,
-            address(this),
-            block.timestamp + 300
-        );
+        // Refund dust
+        uint dA = IERC20(CHAR).balanceOf(address(this));
+        uint dB = IERC20(MFT).balanceOf(address(this));
+        if (dA > 0) IERC20(CHAR).transfer(msg.sender, dA);
+        if (dB > 0) IERC20(MFT).transfer(msg.sender, dB);
 
-        // Return dust to sender
-        uint256 charDust = IERC20(CHAR).balanceOf(address(this));
-        uint256 mftDust  = IERC20(MFT).balanceOf(address(this));
-        if (charDust > 0) IERC20(CHAR).transfer(msg.sender, charDust);
-        if (mftDust > 0)  IERC20(MFT).transfer(msg.sender, mftDust);
-
-        emit PoweredUp(nftContract, msg.sender, liquidity);
+        emit PoweredUp(nftContract, msg.sender, liq);
     }
 }
