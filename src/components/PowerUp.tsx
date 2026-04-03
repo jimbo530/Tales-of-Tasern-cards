@@ -20,11 +20,11 @@ const CONTRACTS: Record<string, { address: `0x${string}`; abi: readonly any[]; c
   // Base (chainId 8453)
   attack:  { address: "0xc0BBFcCab2AAff810b8dB985635d055a3dc47c1C", abi: POWERUP_ABI, chainId: 8453 },
   hp:      { address: "0x46D885122FEa2AfaF3977a71872b35C409a9f6AB", abi: POWERUP_ABI, chainId: 8453 },
-  azos:    { address: "0xD7C584D40216576f1d8651Eab8bEF9DE69497666", abi: POWERUP_ABI, chainId: 8453 },
+  // azos: needs redeployment — was using BTN token address by mistake
   egp:     { address: "0x79F9208847848Ce4a0CF107d1115aa5a3c5CE849", abi: POWERUP_ABI, chainId: 8453 },
   wethegp: { address: "0x127AE66CdFA262c8A9CBA82F43da2953411D6Cf4", abi: POWERUP_ABI, chainId: 8453 },
   char:    { address: "0x97eC03aE9072923937dDBCFBf4D05c8000C13431", abi: POWERUP_ABI, chainId: 8453 },
-  burgers: { address: "0xDe76722Ec72F86D64B54DbB11A5c9211FE6FC8FF", abi: POWERUP_ABI, chainId: 8453 },
+  burgers: { address: "0xF8b1a725a7217501e726Df5aF4a1A1Fe2982a481", abi: POWERUP_ABI, chainId: 8453 },
   // Polygon (chainId 137)
   pol_egpusdglo: { address: "0x627E6a6093403f415051755e3a85D85419cb0aBD", abi: POWERUP_ABI, chainId: 137 },
 };
@@ -44,7 +44,7 @@ type StatOption = {
 const STAT_OPTIONS: StatOption[] = [
   { key: "attack", label: "⚔️🛡️❤️ USDGLO", desc: "ATK + DEF + HP via stablecoin", tokens: "USDGLO + MfT LP", color: "rgba(251,191,36,0.8)", chain: "base", deployed: true },
   { key: "hp", label: "❤️ HP", desc: "Hit points via TGN", tokens: "TGN + MfT LP", color: "rgba(251,113,133,0.8)", chain: "base", deployed: true },
-  { key: "azos", label: "⚔️🛡️❤️ AZOS", desc: "ATK + DEF + HP via stablecoin", tokens: "AZOS + MfT LP", color: "rgba(74,222,128,0.8)", chain: "base", deployed: true },
+  { key: "azos", label: "⚔️🛡️❤️ AZOS", desc: "ATK + DEF + HP via stablecoin", tokens: "AZOS + MfT LP", color: "rgba(74,222,128,0.8)", chain: "base", deployed: false },
   { key: "egp", label: "🌿 EGP", desc: "HP via impact token", tokens: "EGP + MfT LP", color: "rgba(34,197,94,0.8)", chain: "base", deployed: true },
   { key: "wethegp", label: "⛓️ WETH/EGP", desc: "HP + MATK + MDEF — builds liquidity", tokens: "WETH + EGP LP", color: "rgba(96,165,250,0.8)", chain: "base", deployed: true },
   { key: "pol_egpusdglo", label: "🌿💰 EGP/USDGLO", desc: "HP + ATK + DEF via stablecoin + impact", tokens: "EGP + USDGLO LP", color: "rgba(167,139,250,0.8)", chain: "polygon", deployed: true },
