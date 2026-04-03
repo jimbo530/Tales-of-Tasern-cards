@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useAccount, useWalletClient } from "wagmi";
 import { useAdventure } from "@/hooks/useAdventure";
 import { useNftImage } from "@/hooks/useNftImage";
-import { ADVENTURE_CHAPTERS } from "@/lib/adventureData";
+import { ADVENTURE_CHAPTERS, REGIONS } from "@/lib/adventureData";
 import type { NftCharacter } from "@/hooks/useNftStats";
 import { makeUnit, resolveRound, generateEnemies, getValidMoves, canAttack, gridRow, gridCol, type CombatUnit, type CombatEvent } from "@/lib/adventureCombat";
 
@@ -527,94 +527,299 @@ const WORLD_NODES = [
 const WORLD_PATH = WORLD_NODES.map(n => n.id);
 const WORLD_LONDA_IDX = WORLD_NODES.findIndex(n => n.id === 'londa');
 
-// Build Londa nodes from adventure data + map editor positions (localStorage)
-type LondaNode = {
+// Generic map node + region map types (replaces old LondaNode/LondaMapData)
+type MapNode = {
   id: string; x: number; y: number; label: string;
-  type: 'chapter' | 'encounter' | 'travel' | 'destination';
+  type: 'chapter' | 'encounter' | 'region' | 'travel' | 'destination' | 'placeholder' | 'exit';
   chapterIdx?: number; encounterIdx?: number;
+  regionId?: string; // for region-type nodes: which region to drill into
 };
-function buildLondaNodes(): LondaNode[] {
-  let editorPins: Record<string, { x: number; y: number }> = {};
+type RegionMapData = {
+  nodes: MapNode[];
+  edges: [string, string][];
+  adj: Record<string, string[]>;
+};
+
+// Set of region IDs for quick lookup
+const REGION_IDS = new Set(REGIONS.map(r => r.id));
+
+// Build a map for ANY region — reads editor pins from localStorage, falls back to adventureData
+function buildRegionMap(regionId: string): RegionMapData {
+  type EditorPin = { id: string; title: string; x: number; y: number; region: string; requires: string[]; isRegion?: boolean; regionId?: string; color: string };
+  let editorPins: EditorPin[] = [];
   if (typeof window !== 'undefined') {
     try {
       const saved = localStorage.getItem("map-pin-editor-pins");
       if (saved) {
-        for (const p of JSON.parse(saved) as { id: string; x: number; y: number; region: string }[]) {
-          if (p.region === 'londa') editorPins[p.id] = { x: p.x, y: p.y };
-        }
+        editorPins = (JSON.parse(saved) as EditorPin[]).filter(p => p.region === regionId);
       }
     } catch { /* ignore */ }
   }
-  const nodes: LondaNode[] = [];
-  ADVENTURE_CHAPTERS.forEach((ch, idx) => {
-    if (ch.mapPin?.region !== 'londa') return;
-    const pos = editorPins[ch.id];
-    const x = pos?.x ?? ch.mapPin.x;
-    const y = pos?.y ?? ch.mapPin.y;
-    const multi = ch.encounters.length > 1;
-    nodes.push({
-      id: ch.id, x, y,
-      label: multi ? ch.title : '',
-      type: multi ? 'chapter' : 'encounter',
-      chapterIdx: idx,
-      ...(multi ? {} : { encounterIdx: 0 }),
-    });
-  });
-  nodes.push({ id: 'south-road', x: editorPins['south-road']?.x ?? 72, y: editorPins['south-road']?.y ?? 45, label: '', type: 'travel' });
-  nodes.push({ id: 'southfort', x: editorPins['southfort']?.x ?? 80, y: editorPins['southfort']?.y ?? 55, label: 'Southfort', type: 'destination' });
-  return nodes;
-}
 
-// Edge-based adjacency for branching paths on the Londa map
-// Each pair [a, b] means a↔b (bidirectional movement)
-const LONDA_EDGES: [string, string][] = [
-  ['leaving-home', 'path-1'],
-  ['path-1', 'path-2'],
-  ['path-2', 'path-3'],
-  ['path-3', 'newbsberd'],
-  ['newbsberd', 'or'],          // branch: Ork Road → Orkville
-  ['newbsberd', 'nr'],          // branch: North Road → Wickleberry Estate
-  ['or', 'closed-gates'],       // completing either branch opens the gate
-  ['nr', 'closed-gates'],
-  ['newbsberd', 'south-road'],
-  ['south-road', 'southfort'],
-];
-function buildAdjacency(): Record<string, string[]> {
+  // Chapter lookup by id
+  const chapterById = new Map<string, { ch: typeof ADVENTURE_CHAPTERS[0]; idx: number }>();
+  ADVENTURE_CHAPTERS.forEach((ch, idx) => chapterById.set(ch.id, { ch, idx }));
+
+  // Check if this regionId is itself a chapter-region (e.g. "leaving-home")
+  const chapterRegionData = chapterById.get(regionId);
+  const isChapterRegion = chapterRegionData && REGION_IDS.has(regionId);
+
+  const nodes: MapNode[] = [];
+  const edges: [string, string][] = [];
+
+  if (editorPins.length > 0) {
+    // Editor pins are the source of truth for positions and paths
+    for (const pin of editorPins) {
+      if (pin.isRegion) {
+        // Region drill-down pin
+        nodes.push({
+          id: pin.id, x: pin.x, y: pin.y,
+          label: pin.title || pin.id,
+          type: 'region',
+          regionId: pin.regionId ?? pin.id,
+        });
+      } else {
+        const data = chapterById.get(pin.id);
+        if (data) {
+          const multi = data.ch.encounters.length > 1;
+          // If chapter id is also a REGION id → it's a chapter-region (drill-down)
+          if (multi && REGION_IDS.has(data.ch.id)) {
+            nodes.push({
+              id: pin.id, x: pin.x, y: pin.y,
+              label: data.ch.title,
+              type: 'region',
+              chapterIdx: data.idx,
+              regionId: data.ch.id,
+            });
+          } else if (multi) {
+            nodes.push({
+              id: pin.id, x: pin.x, y: pin.y,
+              label: data.ch.title,
+              type: 'chapter',
+              chapterIdx: data.idx,
+            });
+          } else {
+            nodes.push({
+              id: pin.id, x: pin.x, y: pin.y,
+              label: '',
+              type: 'encounter',
+              chapterIdx: data.idx,
+              encounterIdx: 0,
+            });
+          }
+        } else {
+          // Editor-only pin — placeholder for a future level
+          nodes.push({
+            id: pin.id, x: pin.x, y: pin.y,
+            label: pin.title || pin.id,
+            type: 'placeholder',
+          });
+        }
+      }
+      for (const reqId of (pin.requires ?? [])) edges.push([reqId, pin.id]);
+    }
+
+    // Add any chapters not yet placed in editor (so they still show up)
+    const pinIds = new Set(editorPins.map(p => p.id));
+    ADVENTURE_CHAPTERS.forEach((ch, idx) => {
+      if (ch.mapPin?.region !== regionId || pinIds.has(ch.id)) return;
+      const multi = ch.encounters.length > 1;
+      if (multi && REGION_IDS.has(ch.id)) {
+        nodes.push({
+          id: ch.id, x: ch.mapPin.x, y: ch.mapPin.y,
+          label: ch.title,
+          type: 'region',
+          chapterIdx: idx,
+          regionId: ch.id,
+        });
+      } else if (multi) {
+        nodes.push({
+          id: ch.id, x: ch.mapPin.x, y: ch.mapPin.y,
+          label: ch.title,
+          type: 'chapter',
+          chapterIdx: idx,
+        });
+      } else {
+        nodes.push({
+          id: ch.id, x: ch.mapPin.x, y: ch.mapPin.y,
+          label: '',
+          type: 'encounter',
+          chapterIdx: idx,
+          encounterIdx: 0,
+        });
+      }
+      for (const r of (ch.requires ?? [])) edges.push([r, ch.id]);
+      for (const r of (ch.requiresAny ?? [])) edges.push([r, ch.id]);
+    });
+
+    // Also ensure chapter-regions that are in REGIONS but have no editor pin get added
+    REGIONS.forEach(r => {
+      if (r.parent !== regionId) return;
+      const pinIds2 = new Set(nodes.map(n => n.id));
+      if (pinIds2.has(r.id)) return;
+      const data = chapterById.get(r.id);
+      if (data && data.ch.mapPin) {
+        nodes.push({
+          id: r.id, x: data.ch.mapPin.x, y: data.ch.mapPin.y,
+          label: data.ch.title,
+          type: 'region',
+          chapterIdx: data.idx,
+          regionId: r.id,
+        });
+        for (const req of (data.ch.requires ?? [])) edges.push([req, r.id]);
+        for (const req of (data.ch.requiresAny ?? [])) edges.push([req, r.id]);
+      }
+    });
+  } else if (isChapterRegion && chapterRegionData) {
+    // No editor pins for a chapter-region → generate encounter nodes from chapter data
+    const ch = chapterRegionData.ch;
+    const chIdx = chapterRegionData.idx;
+    const positions = CHAPTER_NODE_MAP[chIdx] ?? [];
+    ch.encounters.forEach((_, i) => {
+      const pos = positions[i] ?? { x: 20 + (i % 5) * 15, y: 20 + Math.floor(i / 5) * 20, label: String(i + 1) };
+      nodes.push({
+        id: `${regionId}-enc-${i}`,
+        x: pos.x, y: pos.y,
+        label: pos.label,
+        type: 'encounter',
+        chapterIdx: chIdx,
+        encounterIdx: i,
+      });
+      if (i > 0) edges.push([`${regionId}-enc-${i - 1}`, `${regionId}-enc-${i}`]);
+    });
+  } else {
+    // No editor pins — fallback to adventureData.ts positions
+    ADVENTURE_CHAPTERS.forEach((ch, idx) => {
+      if (ch.mapPin?.region !== regionId) return;
+      const multi = ch.encounters.length > 1;
+      if (multi && REGION_IDS.has(ch.id)) {
+        nodes.push({
+          id: ch.id, x: ch.mapPin.x, y: ch.mapPin.y,
+          label: ch.title,
+          type: 'region',
+          chapterIdx: idx,
+          regionId: ch.id,
+        });
+      } else if (multi) {
+        nodes.push({
+          id: ch.id, x: ch.mapPin.x, y: ch.mapPin.y,
+          label: ch.title,
+          type: 'chapter',
+          chapterIdx: idx,
+        });
+      } else {
+        nodes.push({
+          id: ch.id, x: ch.mapPin.x, y: ch.mapPin.y,
+          label: '',
+          type: 'encounter',
+          chapterIdx: idx,
+          encounterIdx: 0,
+        });
+      }
+      for (const r of (ch.requires ?? [])) edges.push([r, ch.id]);
+      for (const r of (ch.requiresAny ?? [])) edges.push([r, ch.id]);
+    });
+
+    // Also add child regions that are in REGIONS hierarchy
+    REGIONS.forEach(r => {
+      if (r.parent !== regionId) return;
+      const nodeIds = new Set(nodes.map(n => n.id));
+      if (nodeIds.has(r.id)) return;
+      const data = chapterById.get(r.id);
+      if (data && data.ch.mapPin) {
+        nodes.push({
+          id: r.id, x: data.ch.mapPin.x, y: data.ch.mapPin.y,
+          label: data.ch.title,
+          type: 'region',
+          chapterIdx: data.idx,
+          regionId: r.id,
+        });
+        for (const req of (data.ch.requires ?? [])) edges.push([req, r.id]);
+        for (const req of (data.ch.requiresAny ?? [])) edges.push([req, r.id]);
+      }
+    });
+  }
+
+  // Inject exit node for any region with a parent (takes player back up one level)
+  const thisRegion = REGIONS.find(r => r.id === regionId);
+  if (thisRegion?.parent) {
+    const parentName = REGIONS.find(r => r.id === thisRegion.parent)?.name ?? 'Map';
+    const exitPos = EXIT_NODE_POS[regionId] ?? { x: 50, y: 95 };
+    nodes.push({
+      id: `${regionId}-exit`,
+      x: exitPos.x, y: exitPos.y,
+      label: `To ${parentName}`,
+      type: 'exit',
+      regionId: thisRegion.parent,
+    });
+    // Connect exit to the last encounter node so player can walk to it
+    if (nodes.length > 1) {
+      const lastNonExit = nodes[nodes.length - 2];
+      edges.push([lastNonExit.id, `${regionId}-exit`]);
+    }
+  }
+
+  // Build bidirectional adjacency from edges
   const adj: Record<string, string[]> = {};
-  for (const [a, b] of LONDA_EDGES) {
+  for (const [a, b] of edges) {
     if (!adj[a]) adj[a] = [];
     if (!adj[b]) adj[b] = [];
-    adj[a].push(b);
-    adj[b].push(a);
+    if (!adj[a].includes(b)) adj[a].push(b);
+    if (!adj[b].includes(a)) adj[b].push(a);
   }
-  return adj;
+
+  return { nodes, edges, adj };
 }
-const LONDA_ADJ = buildAdjacency();
 
 // Per-chapter encounter positions on local maps
 const CHAPTER_NODE_MAP: Record<number, { x: number; y: number; label: string }[]> = {
   0: [ // Leaving Home — 7 encounters on village map
-    { x: 20, y: 10, label: "1" },
-    { x: 68, y: 8,  label: "2" },
-    { x: 85, y: 48, label: "3" },
-    { x: 70, y: 82, label: "4" },
-    { x: 18, y: 82, label: "5" },
-    { x: 5,  y: 45, label: "6" },
-    { x: 50, y: 50, label: "7" },
+    { x: 20, y: 10, label: "Pippin" },
+    { x: 68, y: 8,  label: "Dag" },
+    { x: 85, y: 48, label: "Maren" },
+    { x: 70, y: 82, label: "Guards" },
+    { x: 18, y: 82, label: "Scout" },
+    { x: 5,  y: 45, label: "Elder" },
+    { x: 50, y: 50, label: "Farewell" },
   ],
-  1: [{ x: 50, y: 50, label: "1" }],  // path-1 Goblin Ambush
-  2: [{ x: 50, y: 50, label: "1" }],  // path-2 The Wolf Pack
-  3: [{ x: 50, y: 50, label: "1" }],  // path-3 Lost in the Weeds
-  4: [ // Newbsberd — 5 encounters on city map
-    { x: 12, y: 85, label: "1" },
-    { x: 28, y: 68, label: "2" },
-    { x: 45, y: 50, label: "3" },
-    { x: 60, y: 35, label: "4" },
-    { x: 78, y: 22, label: "5" },
+  1: [{ x: 50, y: 50, label: "Wolf Pack" }],      // path-1
+  2: [{ x: 50, y: 50, label: "Goblin Ambush" }],   // path-2
+  3: [{ x: 50, y: 50, label: "Weeds" }],            // path-3
+  4: [ // Newbsberd — 6 encounters on city map (5 + Closed Gates)
+    { x: 12, y: 85, label: "Road Tax" },
+    { x: 28, y: 68, label: "Alleys" },
+    { x: 45, y: 50, label: "Crowded Gates" },
+    { x: 60, y: 35, label: "Supplies" },
+    { x: 78, y: 22, label: "Highway Men" },
+    { x: 90, y: 10, label: "\u26E9 Closed Gates" },
   ],
-  5: [{ x: 50, y: 50, label: "1" }],  // closed-gates
-  6: [{ x: 50, y: 50, label: "1" }],  // or — Ork Road
-  7: [{ x: 50, y: 50, label: "1" }],  // nr — North Road
+  5: [{ x: 50, y: 50, label: "Ork Scouts" }],      // or
+  6: [{ x: 50, y: 50, label: "Bandits" }],          // nr — Wickleberry Lane
+  7: [{ x: 50, y: 50, label: "WL 2" }],             // wb2
+  8: [{ x: 50, y: 50, label: "WL 3" }],             // wbl3
+  9: [{ x: 50, y: 50, label: "OR 2" }],             // or-2
+  10: [{ x: 50, y: 50, label: "OR 3" }],            // or3
+  11: [ // Orkville — 2 encounters
+    { x: 35, y: 60, label: "Outer Pits" },
+    { x: 65, y: 30, label: "War Chief" },
+  ],
+  12: [ // Wickleberry Estate — 2 encounters
+    { x: 35, y: 60, label: "Grounds" },
+    { x: 65, y: 30, label: "Lady Wickleberry" },
+  ],
+  13: [ // Goblin Cave — 2 encounters
+    { x: 35, y: 65, label: "Cave Mouth" },
+    { x: 65, y: 30, label: "Goblin King" },
+  ],
+};
+
+// Exit node positions for chapter-regions (pin that takes you back up to parent map)
+const EXIT_NODE_POS: Record<string, { x: number; y: number }> = {
+  "leaving-home":       { x: 92, y: 50 },  // east edge — road to Londa
+  "newbsberd":          { x: 8,  y: 92 },  // south-west — gate out of city
+  "orkville":           { x: 8,  y: 90 },  // south exit
+  "wickleberry-estate": { x: 8,  y: 90 },  // south exit
+  "goblin-cave":        { x: 50, y: 95 },  // cave entrance at bottom
 };
 
 const INTRO_TEXT = "At the heart of a quiet crossroads village, where warm lanternlight spills across worn cobblestones and every path seems to lead somewhere important, your journey begins. Six humble homes ring the central well\u2014each belonging to a friend who has walked a different road, learned a different truth, and now waits to share what they know. Here, among creaking wood, soft laughter, and the scent of earth and fire, you will gather the pieces of what you need\u2014not just tools or directions, but perspective. For beyond this circle, the world grows wider, stranger, and far less forgiving\u2014and only by listening to those who know you best will you be ready to take your first real step into it.";
@@ -623,8 +828,22 @@ export function AdventureMode({ characters, onExit, onStatsRefresh }: Props) {
   const { address } = useAccount();
   const { data: walletClient } = useWalletClient();
   const { state, loaded, introSeen, chapter, encounter, chapters, markIntroSeen, startChapter, startEncounter, startBattle, winBattle, loseBattle, nextEncounter, backToMap, resetAdventure, skipLevel, skipEncounter, isOnCooldown, cooldownRemaining, encounterOnCooldown, encounterCooldownRemaining, setMapPosition, addItem, removeItem, hasItem, currentWeight } = useAdventure(address);
-  // Londa nodes built from adventure data + map editor localStorage positions
-  const [londaNodes] = useState<LondaNode[]>(buildLondaNodes);
+
+  // Region stack: navigation hierarchy (world > londa > leaving-home > ...)
+  const [regionStack, setRegionStack] = useState<string[]>(["world"]);
+  const regionStackRef = useRef(regionStack);
+  regionStackRef.current = regionStack;
+  const currentRegion = regionStack[regionStack.length - 1];
+
+  // Cached region maps — built lazily from editor pins / adventureData
+  const regionMapCache = useRef<Record<string, RegionMapData>>({});
+  function getRegionMap(rId: string): RegionMapData {
+    if (!regionMapCache.current[rId]) {
+      regionMapCache.current[rId] = buildRegionMap(rId);
+    }
+    return regionMapCache.current[rId];
+  }
+
   const [, forceUpdate] = useState(0);
   // Tick timer every second for live countdown
   useEffect(() => {
@@ -638,12 +857,10 @@ export function AdventureMode({ characters, onExit, onStatsRefresh }: Props) {
   const [inventoryOpen, setInventoryOpen] = useState(false);
   const [lpStatus, setLpStatus] = useState<string | null>(null);
   const [mapOpen, setMapOpen] = useState(false);
-  const [chapterSelect, setChapterSelect] = useState<number | null>(null);
   const [mapZoom, setMapZoom] = useState(1);
   const [mapPos, setMapPos] = useState({ x: 0, y: 0 });
   const [dragging, setDragging] = useState(false);
   const dragStart = useRef({ x: 0, y: 0, mx: 0, my: 0 });
-  const [regionMap, setRegionMap] = useState<string | null>(null); // which region map is open
   const [regionZoom, setRegionZoom] = useState(1);
   const [regionPos, setRegionPos] = useState({ x: 0, y: 0 });
   const [regionDragging, setRegionDragging] = useState(false);
@@ -709,18 +926,36 @@ export function AdventureMode({ characters, onExit, onStatsRefresh }: Props) {
     setter({ x: -(node.x - 50) * mapSize / 100, y: -(node.y - 50) * mapSize / 100 });
   }
 
-  // Open Londa map centered on party position
-  function openLondaCentered() {
-    setRegionMap("londa");
+  // Drill into a region — push onto stack, center on first/party node
+  function drillInto(rId: string) {
+    setRegionStack(prev => [...prev, rId]);
     setRegionZoom(1);
-    const node = londaNodes.find(n => n.id === partyPosRef.current);
-    if (node) {
+    const map = getRegionMap(rId);
+    const partyNode = map.nodes.find(n => n.id === partyPosRef.current);
+    const targetNode = partyNode ?? map.nodes[0];
+    if (targetNode) {
+      setMapPosition(targetNode.id);
       const vmin = Math.min(window.innerWidth, window.innerHeight);
       const mapSize = vmin * 0.9;
-      setRegionPos({ x: -(node.x - 50) * mapSize / 100, y: -(node.y - 50) * mapSize / 100 });
+      setRegionPos({ x: -(targetNode.x - 50) * mapSize / 100, y: -(targetNode.y - 50) * mapSize / 100 });
     } else {
       setRegionPos({ x: 0, y: 0 });
     }
+  }
+
+  // Drill out — pop the region stack
+  function drillOut() {
+    setRegionStack(prev => {
+      if (prev.length <= 1) return prev;
+      return prev.slice(0, -1);
+    });
+    setRegionZoom(1);
+    setRegionPos({ x: 0, y: 0 });
+  }
+
+  // Legacy convenience — opens Londa centered on party position
+  function openLondaCentered() {
+    drillInto("londa");
   }
 
   // World map node tracking
@@ -728,17 +963,13 @@ export function AdventureMode({ characters, onExit, onStatsRefresh }: Props) {
   const worldNodeIdxRef = useRef(worldNodeIdx);
   worldNodeIdxRef.current = worldNodeIdx;
 
-  // Village local map node tracking
-  const [villageNodeIdx, setVillageNodeIdx] = useState(0);
-  const villageNodeIdxRef = useRef(villageNodeIdx);
-  villageNodeIdxRef.current = villageNodeIdx;
-
   // Ref to state for reading inside key handler
   const stateRef = useRef(state);
   stateRef.current = state;
 
-  // Londa map movement
-  const partyPos = state.mapPosition ?? (londaNodes[0]?.id ?? "leaving-home");
+  // Party position — node ID in whichever region the player is currently in
+  const currentRegionMap = currentRegion !== "world" ? getRegionMap(currentRegion) : null;
+  const partyPos = state.mapPosition ?? (currentRegionMap?.nodes[0]?.id ?? "leaving-home");
   const partyPosRef = useRef(partyPos);
   partyPosRef.current = partyPos;
 
@@ -765,93 +996,75 @@ export function AdventureMode({ characters, onExit, onStatsRefresh }: Props) {
   );
 
   function getAdjacentNodes(nodeId: string): string[] {
-    return LONDA_ADJ[nodeId] ?? [];
+    const curReg = regionStackRef.current[regionStackRef.current.length - 1];
+    if (curReg === "world") return [];
+    const map = getRegionMap(curReg);
+    return map.adj[nodeId] ?? [];
   }
 
   function moveToNode(targetId: string) {
     const adj = getAdjacentNodes(partyPosRef.current);
     if (!adj.includes(targetId)) return;
     setMapPosition(targetId);
-    const node = londaNodes.find(n => n.id === targetId);
+    const curReg = regionStackRef.current[regionStackRef.current.length - 1];
+    if (curReg === "world") return;
+    const map = getRegionMap(curReg);
+    const node = map.nodes.find(n => n.id === targetId);
     if (!node) return;
     // Landing on uncleared encounter → start fight
     if (node.type === 'encounter' && node.chapterIdx !== undefined && node.encounterIdx !== undefined) {
       const ch = chapters[node.chapterIdx];
       if (ch && !encounterOnCooldown(ch.id, node.encounterIdx)) {
         startEncounter(node.chapterIdx, node.encounterIdx);
-        setRegionMap(null);
+        setRegionStack(["world"]); // collapse back to world on fight
         setPickingParty(true);
       }
     }
   }
 
   // Arrow keys follow paths, transitioning between map layers when at an edge
-  const chapterSelectRef = useRef(chapterSelect);
-  chapterSelectRef.current = chapterSelect;
-  const regionMapRef = useRef(regionMap);
-  regionMapRef.current = regionMap;
-
   useEffect(() => {
     function handleKey(e: KeyboardEvent) {
       const isRight = e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D';
       const isLeft = e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A';
       const isEnter = e.key === 'Enter' || e.key === ' ';
-      if (!isRight && !isLeft && !isEnter) return;
+      const isEscape = e.key === 'Escape';
+      if (!isRight && !isLeft && !isEnter && !isEscape) return;
       e.preventDefault();
 
-      // === LAYER 3: Village local map — move along encounter nodes ===
-      if (chapterSelectRef.current !== null) {
-        const chIdx = chapterSelectRef.current;
-        const ch = chapters[chIdx];
-        const nodes = CHAPTER_NODE_MAP[chIdx] ?? [];
-        if (!ch) return;
-        const maxNode = Math.min(nodes.length, ch.encounters.length) - 1;
+      const stack = regionStackRef.current;
+      const curReg = stack[stack.length - 1];
 
-        if (isRight && villageNodeIdxRef.current < maxNode) {
-          setVillageNodeIdx(villageNodeIdxRef.current + 1);
-        } else if (isLeft && villageNodeIdxRef.current > 0) {
-          setVillageNodeIdx(villageNodeIdxRef.current - 1);
-        } else if (isLeft && villageNodeIdxRef.current === 0) {
-          setChapterSelect(null); // back to Londa
+      // === LAYER 1: Non-world region — edge-based movement ===
+      if (stack.length > 1 && curReg !== "world") {
+        const map = getRegionMap(curReg);
+        const mapNodes = map.nodes;
+        const mapAdj = map.adj;
+        const curNode = mapNodes.find(n => n.id === partyPosRef.current);
+
+        if (isEscape) {
+          drillOut();
+          return;
         }
 
-        if (isEnter) {
-          const nodeIdx = villageNodeIdxRef.current;
-          const s = stateRef.current;
-          const encCooldowns = s.encounterCooldowns ?? {};
-          const beaten = ch.encounters.map((_, i) => !!encCooldowns[`${ch.id}-${i}`]);
-          const highestBeaten = beaten.lastIndexOf(true);
-          const locked = nodeIdx > highestBeaten + 1;
-          const lastTime = encCooldowns[`${ch.id}-${nodeIdx}`];
-          const cdDuration = ch.cooldownMs ?? 20 * 60 * 1000;
-          const onCd = lastTime ? Date.now() - lastTime < cdDuration : false;
-          if (!locked && !onCd) {
-            startEncounter(chIdx, nodeIdx);
-            setChapterSelect(null);
-            setPickingParty(true);
-          }
-        }
-        return;
-      }
-
-      // === LAYER 2: Londa regional map — edge-based movement ===
-      if (regionMapRef.current === "londa") {
-        const curNode = londaNodes.find(n => n.id === partyPosRef.current);
         if (!curNode) return;
-        const curIdx = londaNodes.indexOf(curNode);
+        const curIdx = mapNodes.indexOf(curNode);
 
         if (isEnter) {
-          if (curNode.type === 'chapter' && curNode.chapterIdx !== undefined) {
+          if (curNode.type === 'region' && curNode.regionId) {
+            // Drill into sub-region
+            drillInto(curNode.regionId);
+          } else if (curNode.type === 'chapter' && curNode.chapterIdx !== undefined) {
             const ch = chapters[curNode.chapterIdx];
             if (ch && isChapterUnlocked(ch)) {
-              const encCooldowns = stateRef.current.encounterCooldowns ?? {};
-              const beaten = ch.encounters.map((_, i) => !!encCooldowns[`${ch.id}-${i}`]);
-              const nextIdx = beaten.indexOf(false);
-              const nodeCount = (CHAPTER_NODE_MAP[curNode.chapterIdx] ?? []).length;
-              const maxIdx = Math.min(nodeCount, ch.encounters.length) - 1;
-              setVillageNodeIdx(nextIdx === -1 ? 0 : Math.min(nextIdx, maxIdx));
+              // If the chapter is also a region, drill into it
+              if (REGION_IDS.has(ch.id)) {
+                drillInto(ch.id);
+              } else {
+                // Open encounter select — drill into chapter as sub-region
+                drillInto(ch.id);
+              }
             }
-            setChapterSelect(curNode.chapterIdx);
           } else if (curNode.type === 'encounter' && curNode.chapterIdx !== undefined && curNode.encounterIdx !== undefined) {
             const ch = chapters[curNode.chapterIdx];
             if (ch && !encounterOnCooldown(ch.id, curNode.encounterIdx)) {
@@ -863,16 +1076,16 @@ export function AdventureMode({ characters, onExit, onStatsRefresh }: Props) {
         }
 
         // Move along adjacent nodes — right=forward (higher index), left=backward
-        const adj = LONDA_ADJ[partyPosRef.current] ?? [];
-        const forward = adj.filter(id => { const i = londaNodes.findIndex(n => n.id === id); return i > curIdx; });
-        const backward = adj.filter(id => { const i = londaNodes.findIndex(n => n.id === id); return i >= 0 && i < curIdx; });
+        const adj = mapAdj[partyPosRef.current] ?? [];
+        const forward = adj.filter(id => { const i = mapNodes.findIndex(n => n.id === id); return i > curIdx; });
+        const backward = adj.filter(id => { const i = mapNodes.findIndex(n => n.id === id); return i >= 0 && i < curIdx; });
         if (isRight && forward.length > 0) moveToNode(forward[0]);
         else if (isLeft && backward.length > 0) moveToNode(backward[0]);
-        else if (isLeft && backward.length === 0) { setRegionMap(null); setWorldNodeIdx(WORLD_LONDA_IDX); }
+        else if (isLeft && backward.length === 0) drillOut();
         return;
       }
 
-      // === LAYER 1: World map — follow WORLD_PATH ===
+      // === LAYER 2: World map — follow WORLD_PATH ===
       if (state.phase === "map") {
         if (isRight && worldNodeIdxRef.current < WORLD_PATH.length - 1) {
           setWorldNodeIdx(worldNodeIdxRef.current + 1);
@@ -882,7 +1095,7 @@ export function AdventureMode({ characters, onExit, onStatsRefresh }: Props) {
         if (isEnter) {
           const node = WORLD_NODES[worldNodeIdxRef.current];
           if (node?.active && node.id === 'londa') {
-            openLondaCentered();
+            drillInto("londa");
           }
         }
       }
@@ -890,7 +1103,7 @@ export function AdventureMode({ characters, onExit, onStatsRefresh }: Props) {
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.phase]);
+  }, [state.phase, regionStack]);
 
   // Send LP reward to each party member's NFT via faucet (player pays gas only)
   async function sendLpRewards() {
@@ -1055,147 +1268,6 @@ export function AdventureMode({ characters, onExit, onStatsRefresh }: Props) {
     );
   }
 
-  // Chapter select — show encounters as nodes on the local map
-  const encounterNodes = CHAPTER_NODE_MAP[chapterSelect ?? 0] ?? CHAPTER_NODE_MAP[0];
-
-  if (chapterSelect !== null) {
-    const ch = chapters[chapterSelect];
-    if (ch) {
-      const beatenEncounters = ch.encounters.map((_, i) => {
-        return (state.encounterCooldowns ?? {})[`${ch.id}-${i}`] ? true : false;
-      });
-      const highestBeaten = beatenEncounters.lastIndexOf(true);
-
-      return (
-        <div className="fixed inset-0" style={{ background: '#0a0608' }}>
-          {floatingBack}{inventoryButton}{inventoryPanel}
-          <button onClick={() => setChapterSelect(null)}
-            className="fixed top-32 left-4 z-50 px-3 py-1 rounded-lg text-xs font-bold"
-            style={{ background: 'rgba(10,6,8,0.95)', color: 'rgba(201,168,76,0.7)', border: '1px solid rgba(201,168,76,0.3)' }}>
-            ← {regionMap ? 'Londa' : 'Map'}
-          </button>
-
-          {/* Londa map with encounter nodes */}
-          <div className="absolute inset-0 overflow-hidden touch-none"
-            onWheel={handleRegionWheel}
-            onPointerDown={handleRegionPointerDown}
-            onPointerMove={handleRegionPointerMove}
-            onPointerUp={handleRegionPointerUp}
-            style={{ cursor: regionDragging ? 'grabbing' : 'grab' }}>
-            <div style={{
-              position: 'absolute', left: '50%', top: '50%',
-              transform: `translate(calc(-50% + ${regionPos.x}px), calc(-50% + ${regionPos.y}px)) scale(${regionZoom})`,
-              transition: regionDragging ? 'none' : 'transform 0.1s ease-out',
-              width: '90vmin',
-            }}>
-              {ch.image ? (
-                /* eslint-disable-next-line @next/next/no-img-element */
-                <img src={ch.image} alt={ch.title} draggable={false} style={{ width: '100%', display: 'block' }} />
-              ) : (
-                <div style={{ width: '100%', aspectRatio: '1', background: 'linear-gradient(135deg, #1a1520 0%, #12101a 40%, #0d0a10 100%)' }} />
-              )}
-
-              {/* Path lines between nodes */}
-              <svg className="absolute inset-0 w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none" style={{ pointerEvents: 'none' }}>
-                {!ch.image && encounterNodes.map((node, i) => {
-                  if (i >= ch.encounters.length - 1 || i >= encounterNodes.length - 1) return null;
-                  const next = encounterNodes[i + 1];
-                  return (
-                    <line key={`road-${i}`} x1={node.x} y1={node.y} x2={next.x} y2={next.y}
-                      stroke="rgba(139,119,79,0.15)" strokeWidth="3" strokeLinecap="round" />
-                  );
-                })}
-                {encounterNodes.map((node, i) => {
-                  if (i >= ch.encounters.length - 1 || i >= encounterNodes.length - 1) return null;
-                  const next = encounterNodes[i + 1];
-                  const beaten = beatenEncounters[i];
-                  return (
-                    <line key={i} x1={node.x} y1={node.y} x2={next.x} y2={next.y}
-                      stroke={beaten ? 'rgba(74,222,128,0.6)' : 'rgba(201,168,76,0.3)'}
-                      strokeWidth={ch.image ? "0.4" : "1"} strokeDasharray={beaten ? 'none' : '1 0.5'} />
-                  );
-                })}
-              </svg>
-
-              {/* Encounter nodes */}
-              {ch.encounters.map((enc, i) => {
-                if (i >= encounterNodes.length) return null;
-                const pos = encounterNodes[i];
-                const beaten = beatenEncounters[i];
-                const locked = i > highestBeaten + 1;
-                const onCd = encounterOnCooldown(ch.id, i);
-                const cdMs = encounterCooldownRemaining(ch.id, i);
-                const cdH = Math.floor(cdMs / 3600000);
-                const cdM = Math.floor((cdMs % 3600000) / 60000);
-                const cdS = Math.floor((cdMs % 60000) / 1000);
-                const canPlay = !locked && !onCd;
-
-                return (
-                  <div key={i} className="absolute" style={{ left: `${pos.x}%`, top: `${pos.y}%`, transform: 'translate(-50%, -50%)' }}>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (!canPlay) return;
-                        startEncounter(chapterSelect, i);
-                        setChapterSelect(null);
-                        setPickingParty(true);
-                      }}
-                      className={`rounded-full flex items-center justify-center font-black ${canPlay && !beaten ? 'animate-pulse' : ''}`}
-                      style={{
-                        width: 28, height: 28,
-                        background: beaten ? 'rgba(34,197,94,0.8)' : canPlay ? 'rgba(201,168,76,0.9)' : 'rgba(60,60,60,0.8)',
-                        border: `3px solid ${beaten ? '#4ade80' : canPlay ? '#f0d070' : 'rgba(100,100,100,0.5)'}`,
-                        boxShadow: canPlay ? '0 0 12px rgba(201,168,76,0.5)' : 'none',
-                        cursor: canPlay ? 'pointer' : 'not-allowed',
-                        fontSize: '0.5rem', color: canPlay || beaten ? '#0a0608' : 'rgba(150,150,150,0.5)',
-                      }}>
-                      {beaten ? '✓' : locked ? '🔒' : pos.label}
-                    </button>
-                    <p className="text-center font-bold pointer-events-none" style={{
-                      fontSize: '0.4rem', color: beaten ? '#4ade80' : canPlay ? '#f0d070' : 'rgba(150,150,150,0.4)',
-                      textShadow: '0 1px 3px rgba(0,0,0,0.9)', whiteSpace: 'nowrap', marginTop: 2,
-                    }}>
-                      {enc.name}
-                    </p>
-                    {onCd && (
-                      <p className="text-center pointer-events-none" style={{ fontSize: '0.35rem', color: 'rgba(150,150,150,0.6)' }}>
-                        ⏳{cdH}h{cdM}m{cdS}s
-                      </p>
-                    )}
-                  </div>
-                );
-              })}
-
-              {/* Party token — follows villageNodeIdx */}
-              {(() => {
-                const node = encounterNodes[villageNodeIdx];
-                return node ? partyToken(node.x, node.y - 4) : null;
-              })()}
-            </div>
-          </div>
-
-          {/* Title */}
-          <div className="absolute top-4 left-1/2 -translate-x-1/2" style={{ zIndex: 10 }}>
-            <h2 className="text-lg font-black tracking-widest text-gold-shimmer uppercase"
-              style={{ fontFamily: "'Cinzel Decorative', 'Cinzel', serif", textShadow: '0 2px 8px rgba(0,0,0,0.9)' }}>
-              ⚜ {ch.title} ⚜
-            </h2>
-          </div>
-
-          {/* Zoom controls */}
-          <div className="absolute top-4 right-4 flex gap-2" style={{ zIndex: 10 }}>
-            <button onClick={() => setRegionZoom(z => Math.min(5, z + 0.5))} className="px-3 py-2 rounded-lg font-black text-lg"
-              style={{ background: 'rgba(10,6,8,0.9)', color: '#f0d070', border: '1px solid rgba(201,168,76,0.5)' }}>+</button>
-            <button onClick={() => setRegionZoom(z => Math.max(0.5, z - 0.5))} className="px-3 py-2 rounded-lg font-black text-lg"
-              style={{ background: 'rgba(10,6,8,0.9)', color: '#f0d070', border: '1px solid rgba(201,168,76,0.5)' }}>−</button>
-            <button onClick={() => { setRegionZoom(1); setRegionPos({ x: 0, y: 0 }); }} className="px-3 py-2 rounded-lg font-bold text-xs"
-              style={{ background: 'rgba(10,6,8,0.9)', color: '#f0d070', border: '1px solid rgba(201,168,76,0.5)' }}>Reset</button>
-          </div>
-        </div>
-      );
-    }
-  }
-
   // Map screen — world map with location markers
   if (state.phase === "map") {
     return (
@@ -1339,8 +1411,24 @@ export function AdventureMode({ characters, onExit, onStatsRefresh }: Props) {
           </button>
         )}
 
-        {/* Londa regional map overlay */}
-        {regionMap === "londa" && (
+        {/* Generic region map overlay — any level of the hierarchy */}
+        {regionStack.length > 1 && (() => {
+          const curRegId = regionStack[regionStack.length - 1];
+          const regionDef = REGIONS.find(r => r.id === curRegId);
+          const regionMapData = getRegionMap(curRegId);
+          const regionNodes = regionMapData.nodes;
+          const regionEdges = regionMapData.edges;
+          // Determine background image: use regionDef mapImage, or chapter image for chapter-regions
+          const chapterForRegion = ADVENTURE_CHAPTERS.find(ch => ch.id === curRegId);
+          const bgImage = regionDef?.mapImage ?? chapterForRegion?.image ?? null;
+          const regionName = regionDef?.name ?? chapterForRegion?.title ?? curRegId;
+          // Breadcrumb from stack
+          const breadcrumb = regionStack.map(id => {
+            const rd = REGIONS.find(r => r.id === id);
+            return rd?.name ?? id;
+          }).join(' > ');
+
+          return (
           <div className="fixed inset-0" style={{ zIndex: 50, background: '#0a0608' }}>
             <div className="absolute inset-0 overflow-hidden touch-none"
               onWheel={handleRegionWheel}
@@ -1354,17 +1442,22 @@ export function AdventureMode({ characters, onExit, onStatsRefresh }: Props) {
                 transform: `translate(calc(-50% + ${regionPos.x}px), calc(-50% + ${regionPos.y}px)) scale(${regionZoom})`,
                 transition: regionDragging ? 'none' : 'transform 0.1s ease-out',
                 width: '90vmin',
-                aspectRatio: '1 / 1',
-                backgroundImage: 'url(/londa-map.jpg)',
-                backgroundSize: 'cover',
-                backgroundPosition: 'center',
+                ...(bgImage ? {
+                  aspectRatio: '1 / 1',
+                  backgroundImage: `url(${bgImage})`,
+                  backgroundSize: 'cover',
+                  backgroundPosition: 'center',
+                } : {
+                  aspectRatio: '1 / 1',
+                  background: 'linear-gradient(135deg, #1a1520 0%, #12101a 40%, #0d0a10 100%)',
+                }),
               }}>
 
                 {/* Road paths connecting adjacent nodes */}
                 <svg className="absolute inset-0 w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none" style={{ pointerEvents: 'none' }}>
-                  {LONDA_EDGES.map(([aId, bId], i) => {
-                    const a = londaNodes.find(n => n.id === aId);
-                    const b = londaNodes.find(n => n.id === bId);
+                  {regionEdges.map(([aId, bId], i) => {
+                    const a = regionNodes.find(n => n.id === aId);
+                    const b = regionNodes.find(n => n.id === bId);
                     if (!a || !b) return null;
                     return <line key={i} x1={a.x} y1={a.y} x2={b.x} y2={b.y}
                       stroke="rgba(139,119,79,0.4)" strokeWidth="0.5" strokeDasharray="1 0.5" strokeLinecap="round" />;
@@ -1372,7 +1465,7 @@ export function AdventureMode({ characters, onExit, onStatsRefresh }: Props) {
                 </svg>
 
                 {/* All map nodes */}
-                {londaNodes.map((node) => {
+                {regionNodes.map((node) => {
                   const isHere = partyPos === node.id;
                   const adjacent = getAdjacentNodes(partyPos);
                   const isAdj = adjacent.includes(node.id);
@@ -1386,19 +1479,37 @@ export function AdventureMode({ characters, onExit, onStatsRefresh }: Props) {
                   let pulse = false;
                   let size = 20;
 
-                  if (node.type === 'chapter') {
+                  if (node.type === 'region') {
+                    bg = 'rgba(139,105,20,0.8)'; border = '#f0d070'; textColor = '#f0d070';
+                    icon = '\uD83D\uDCC2'; size = 24;
+                    // Check if the underlying chapter is unlocked
+                    if (node.chapterIdx !== undefined) {
+                      const ch = chapters[node.chapterIdx];
+                      const unlocked = ch ? isChapterUnlocked(ch) : false;
+                      const completed = ch ? state.completedChapters.includes(ch.id) : false;
+                      if (completed) {
+                        bg = 'rgba(34,197,94,0.8)'; border = '#4ade80'; textColor = '#4ade80';
+                        icon = '\u2713'; size = 24;
+                      } else if (!unlocked) {
+                        bg = 'rgba(60,60,60,0.7)'; border = 'rgba(100,100,100,0.5)'; textColor = 'rgba(100,100,100,0.5)';
+                        icon = '\uD83D\uDD12'; size = 24;
+                      } else {
+                        pulse = !isHere;
+                      }
+                    }
+                  } else if (node.type === 'chapter') {
                     const ch = node.chapterIdx !== undefined ? chapters[node.chapterIdx] : undefined;
                     const unlocked = ch ? isChapterUnlocked(ch) : false;
                     const completed = ch ? state.completedChapters.includes(ch.id) : false;
                     if (completed) {
                       bg = 'rgba(34,197,94,0.8)'; border = '#4ade80'; textColor = '#4ade80';
-                      icon = '✓'; size = 22;
+                      icon = '\u2713'; size = 22;
                     } else if (unlocked) {
                       bg = 'rgba(201,168,76,0.9)'; border = '#f0d070'; textColor = '#f0d070';
-                      icon = '⚔'; size = 22; pulse = !isHere;
+                      icon = '\u2694'; size = 22; pulse = !isHere;
                     } else {
                       bg = 'rgba(60,60,60,0.7)'; border = 'rgba(100,100,100,0.5)'; textColor = 'rgba(100,100,100,0.5)';
-                      icon = '🔒'; size = 22;
+                      icon = '\uD83D\uDD12'; size = 22;
                     }
                   } else if (node.type === 'encounter' && node.chapterIdx !== undefined) {
                     const encCh = chapters[node.chapterIdx];
@@ -1409,23 +1520,27 @@ export function AdventureMode({ characters, onExit, onStatsRefresh }: Props) {
                       const cdH = Math.floor((cdMs % 86400000) / 3600000);
                       if (cleared) {
                         bg = 'rgba(34,197,94,0.8)'; border = '#4ade80'; textColor = 'rgba(74,222,128,0.7)';
-                        icon = '✓'; subtitle = `Resets ${cdD}d ${cdH}h`;
+                        icon = '\u2713'; subtitle = `Resets ${cdD}d ${cdH}h`;
                       } else {
                         bg = 'rgba(220,38,38,0.8)'; border = '#f87171'; textColor = 'rgba(248,113,113,0.8)';
-                        icon = '⚔'; pulse = !isHere;
+                        icon = '\u2694'; pulse = !isHere;
                       }
                     }
                     size = 12;
                   } else if (node.type === 'travel') {
                     bg = 'rgba(80,80,80,0.5)'; border = 'rgba(120,120,120,0.4)'; textColor = 'rgba(120,120,120,0.4)';
-                    icon = '·'; size = 10;
+                    icon = '\u00B7'; size = 10;
+                  } else if (node.type === 'exit') {
+                    bg = 'rgba(56,130,180,0.85)'; border = '#7dd3fc'; textColor = '#7dd3fc';
+                    icon = '\uD83D\uDEAA'; size = 22; pulse = !isHere;
+                  } else if (node.type === 'placeholder') {
+                    bg = 'rgba(50,50,50,0.5)'; border = 'rgba(90,90,90,0.4)'; textColor = 'rgba(90,90,90,0.5)';
+                    icon = '?'; size = 18;
                   } else {
-                    // destination (Newbsberd, Southfort, etc.)
                     bg = 'rgba(100,100,100,0.6)'; border = 'rgba(150,150,150,0.5)'; textColor = 'rgba(150,150,150,0.4)';
                     icon = '?'; size = 20;
                   }
 
-                  // Adjacent nodes glow to invite movement
                   const adjGlow = isAdj ? '0 0 14px rgba(201,168,76,0.7)' : '';
 
                   return (
@@ -1433,17 +1548,27 @@ export function AdventureMode({ characters, onExit, onStatsRefresh }: Props) {
                       <button onClick={(e) => {
                           e.stopPropagation();
                           if (isHere) {
-                            if (node.type === 'chapter' && node.chapterIdx !== undefined) {
+                            if (node.type === 'exit' && node.regionId) {
+                              // Drill out to parent region, land on this region's pin
+                              drillOut();
+                              return;
+                            } else if (node.type === 'region' && node.regionId) {
+                              // Drill into sub-region
+                              drillInto(node.regionId);
+                            } else if (node.type === 'chapter' && node.chapterIdx !== undefined) {
                               const ch = chapters[node.chapterIdx];
                               if (ch && isChapterUnlocked(ch)) {
-                                setChapterSelect(node.chapterIdx);
-                                setRegionZoom(1); setRegionPos({ x: 0, y: 0 });
+                                if (REGION_IDS.has(ch.id)) {
+                                  drillInto(ch.id);
+                                } else {
+                                  drillInto(ch.id);
+                                }
                               }
                             } else if (node.type === 'encounter' && node.chapterIdx !== undefined && node.encounterIdx !== undefined) {
                               const ch = chapters[node.chapterIdx];
                               if (ch && !encounterOnCooldown(ch.id, node.encounterIdx)) {
                                 startEncounter(node.chapterIdx, node.encounterIdx);
-                                setRegionMap(null);
+                                setRegionStack(["world"]);
                                 setPickingParty(true);
                               }
                             }
@@ -1460,10 +1585,10 @@ export function AdventureMode({ characters, onExit, onStatsRefresh }: Props) {
                           background: bg,
                           border: `${isAdj ? '3px' : '2px'} solid ${isAdj ? '#f0d070' : border}`,
                           boxShadow: adjGlow,
-                          cursor: isAdj || (isHere && (node.type === 'chapter' || node.type === 'encounter')) ? 'pointer' : 'default',
+                          cursor: isAdj || (isHere && (node.type === 'chapter' || node.type === 'encounter' || node.type === 'region' || node.type === 'exit')) ? 'pointer' : 'default',
                           display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          fontSize: '0.35rem', fontWeight: 900,
-                          color: node.type === 'chapter' ? '#0a0608' : '#fff',
+                          fontSize: node.type === 'exit' ? '0.55rem' : '0.35rem', fontWeight: 900,
+                          color: (node.type === 'chapter' || node.type === 'region') ? '#0a0608' : '#fff',
                           transition: 'box-shadow 0.3s, border 0.3s',
                         }}>
                         {icon}
@@ -1471,10 +1596,10 @@ export function AdventureMode({ characters, onExit, onStatsRefresh }: Props) {
                       {node.label && (
                         <span className="absolute font-bold pointer-events-none"
                           style={{
-                            left: `${node.x}%`, top: `${node.y + (node.type === 'chapter' || node.type === 'destination' ? 4 : 3)}%`,
+                            left: `${node.x}%`, top: `${node.y + (node.type === 'chapter' || node.type === 'destination' || node.type === 'region' || node.type === 'exit' ? 4 : 3)}%`,
                             transform: 'translateX(-50%)',
-                            fontSize: node.type === 'chapter' || node.type === 'destination' ? '0.45rem' : '0.35rem',
-                            fontWeight: node.type === 'chapter' || node.type === 'destination' ? 900 : 700,
+                            fontSize: (node.type === 'chapter' || node.type === 'destination' || node.type === 'region' || node.type === 'exit') ? '0.45rem' : '0.35rem',
+                            fontWeight: (node.type === 'chapter' || node.type === 'destination' || node.type === 'region' || node.type === 'exit') ? 900 : 700,
                             color: textColor,
                             textShadow: '0 1px 4px rgba(0,0,0,0.9)',
                             whiteSpace: 'nowrap',
@@ -1499,19 +1624,22 @@ export function AdventureMode({ characters, onExit, onStatsRefresh }: Props) {
 
                 {/* Party token — shows current position */}
                 {(() => {
-                  const partyNode = londaNodes.find(n => n.id === partyPos);
+                  const partyNode = regionNodes.find(n => n.id === partyPos);
                   if (!partyNode) return null;
                   return partyToken(partyNode.x, partyNode.y - 4);
                 })()}
               </div>
             </div>
 
-            {/* Top bar */}
-            <div className="absolute top-4 left-1/2 -translate-x-1/2 flex items-center gap-3" style={{ zIndex: 51 }}>
+            {/* Top bar with breadcrumb */}
+            <div className="absolute top-4 left-1/2 -translate-x-1/2 flex flex-col items-center gap-1" style={{ zIndex: 51 }}>
               <h2 className="text-lg font-black tracking-widest text-gold-shimmer uppercase"
                 style={{ fontFamily: "'Cinzel Decorative', 'Cinzel', serif", textShadow: '0 2px 8px rgba(0,0,0,0.9)' }}>
-                ⚜ Londa ⚜
+                {'\u269C'} {regionName} {'\u269C'}
               </h2>
+              <p className="text-xs" style={{ color: 'rgba(201,168,76,0.4)', textShadow: '0 1px 4px rgba(0,0,0,0.9)' }}>
+                {breadcrumb}
+              </p>
             </div>
 
             {/* Controls */}
@@ -1521,20 +1649,21 @@ export function AdventureMode({ characters, onExit, onStatsRefresh }: Props) {
                 style={{ background: 'rgba(10,6,8,0.9)', color: '#f0d070', border: '1px solid rgba(201,168,76,0.5)' }}>+</button>
               <button onClick={() => setRegionZoom(z => Math.max(0.5, z - 0.5))}
                 className="px-3 py-2 rounded-lg font-black text-lg"
-                style={{ background: 'rgba(10,6,8,0.9)', color: '#f0d070', border: '1px solid rgba(201,168,76,0.5)' }}>−</button>
+                style={{ background: 'rgba(10,6,8,0.9)', color: '#f0d070', border: '1px solid rgba(201,168,76,0.5)' }}>{'\u2212'}</button>
               <button onClick={() => { setRegionZoom(1); setRegionPos({ x: 0, y: 0 }); }}
                 className="px-3 py-2 rounded-lg font-bold text-xs"
                 style={{ background: 'rgba(10,6,8,0.9)', color: '#f0d070', border: '1px solid rgba(201,168,76,0.5)' }}>Reset</button>
-              <button onClick={() => setRegionMap(null)}
+              <button onClick={drillOut}
                 className="px-3 py-2 rounded-lg font-black text-lg"
-                style={{ background: 'rgba(220,38,38,0.8)', color: '#fff', border: '1px solid rgba(220,38,38,0.9)' }}>✕</button>
+                style={{ background: 'rgba(220,38,38,0.8)', color: '#fff', border: '1px solid rgba(220,38,38,0.9)' }}>{'\u2715'}</button>
             </div>
 
             <p className="absolute bottom-4 left-1/2 -translate-x-1/2 text-xs" style={{ zIndex: 51, color: 'rgba(201,168,76,0.4)', textShadow: '0 1px 4px rgba(0,0,0,0.9)' }}>
-              Tap a location to begin · Pinch to zoom · Drag to pan
+              Tap a location to begin {'\u00B7'} Pinch to zoom {'\u00B7'} Drag to pan
             </p>
           </div>
-        )}
+          );
+        })()}
       </div>
     );
   }

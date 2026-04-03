@@ -23,15 +23,16 @@ const PIN_COLORS = [
 function buildPins(chapters: Chapter[], regions: Region[]): Pin[] {
   const pins: Pin[] = [];
 
-  // Add chapter pins
+  // Add chapter pins — merge requires + requiresAny so all paths render
   chapters.forEach((ch, i) => {
+    const allReqs = [...(ch.requires ?? []), ...(ch.requiresAny ?? [])];
     pins.push({
       id: ch.id,
       title: ch.title,
       x: ch.mapPin?.x ?? 10 + i * 12,
       y: ch.mapPin?.y ?? 50,
       region: ch.mapPin?.region ?? "world",
-      requires: ch.requires ?? [],
+      requires: allReqs,
       color: PIN_COLORS[i % PIN_COLORS.length],
     });
   });
@@ -161,7 +162,33 @@ export function MapPinEditor() {
     if (typeof window !== "undefined") {
       try {
         const saved = localStorage.getItem(STORAGE_KEY);
-        if (saved) return JSON.parse(saved) as Pin[];
+        if (saved) {
+          const parsed = JSON.parse(saved) as Pin[];
+          // Check if saved pins match current chapters
+          const currentIds = new Set(ADVENTURE_CHAPTERS.map(ch => ch.id));
+          const savedIds = new Set(parsed.filter(p => !p.isRegion).map(p => p.id));
+          if ([...currentIds].every(id => savedIds.has(id))) return parsed;
+          // Chapters changed — rebuild but carry over positions + any user-added pins
+          const fresh = buildPins(ADVENTURE_CHAPTERS, REGIONS);
+          const oldById: Record<string, Pin> = {};
+          for (const p of parsed) {
+            oldById[p.id] = p;
+            if (p.id.startsWith('region_')) oldById[p.id.replace('region_', '')] = p;
+          }
+          // Carry over positions from old pins that match
+          for (const pin of fresh) {
+            const old = oldById[pin.id];
+            if (old && old.region === pin.region) { pin.x = old.x; pin.y = old.y; }
+          }
+          // Preserve user-added pins (not from chapters/regions)
+          const freshIds = new Set(fresh.map(p => p.id));
+          for (const p of parsed) {
+            if (!freshIds.has(p.id) && !p.id.startsWith('region_')) {
+              fresh.push(p);
+            }
+          }
+          return fresh;
+        }
       } catch { /* ignore */ }
     }
     return buildPins(ADVENTURE_CHAPTERS, REGIONS);
@@ -439,12 +466,12 @@ export function MapPinEditor() {
       )}
 
       <div className="flex" style={{ height: isAdding ? "calc(100vh - 110px)" : "calc(100vh - 80px)" }}>
-        {/* Cork Board */}
-        <div className="flex-1 relative overflow-hidden" style={{
+        {/* Cork Board — forced 1:1 aspect ratio to match game map rendering */}
+        <div className="flex-1 relative overflow-hidden flex items-center justify-center" style={{
           background: `linear-gradient(135deg, #c4956a 0%, #b8865c 30%, #c9a06e 60%, #b8865c 100%)`,
           boxShadow: "inset 0 0 80px rgba(0,0,0,0.3)",
         }}>
-          <div ref={boardRef} className="absolute inset-4 rounded-lg overflow-hidden"
+          <div ref={boardRef} className="relative rounded-lg overflow-hidden"
             onClick={handleBoardClick}
             onMouseDown={(e) => {
               // Path connections: detect pin clicks at board level via data attribute
@@ -468,6 +495,8 @@ export function MapPinEditor() {
             onMouseMove={handleBoardMouseMove}
             onMouseLeave={() => setMousePos(null)}
             style={{
+              width: 'min(calc(100% - 32px), calc(100vh - 120px))',
+              aspectRatio: '1 / 1',
               border: "3px solid #5c3a1e",
               boxShadow: "inset 0 0 20px rgba(0,0,0,0.4), 0 4px 12px rgba(0,0,0,0.5)",
               cursor: addingPin || addingRegionPin ? "crosshair" : addingPath ? "pointer" : "default",

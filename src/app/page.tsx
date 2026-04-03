@@ -16,7 +16,6 @@ import { BattleView } from "@/components/BattleView";
 import { CardBattleBoard } from "@/components/CardBattleBoard";
 import { Matchmaking } from "@/components/Matchmaking";
 import { AdventureMode } from "@/components/AdventureMode";
-import { Marketplace } from "@/components/Marketplace";
 import { PowerUp } from "@/components/PowerUp";
 import { downloadAndCache, getCacheCount, clearImageCache } from "@/lib/imageCache";
 import { resolveImage, toHttp } from "@/lib/resolveImage";
@@ -94,7 +93,7 @@ export default function Home() {
   const [search, setSearch] = useState("");
 
   // Navigation
-  const [view, setView] = useState<"menu" | "heroes" | "army" | "adventure" | "castleSiege" | "castleAI" | "matchmaking" | "marketplace" | "powerUp" | "1v1">("menu");
+  const [view, setView] = useState<"menu" | "heroes" | "army" | "adventure" | "castleSiege" | "castleAI" | "matchmaking" | "1v1" | "powerUp">("menu");
 
   // Cycling background images
   const BG_IMAGES = ["/bg-plains-1.webp", "/bg-plains-2.webp", "/bg-plains-3.webp", "/bg-plains-4.webp", "/bg-desert-1.webp", "/bg-desert-2.webp", "/bg-desert-3.webp", "/bg-desert-4.webp"];
@@ -184,9 +183,9 @@ export default function Home() {
     </main>
   );
 
-  if (view === "powerUp") return subPage("Power Up", <PowerUp characters={characters} onBack={() => cycleView("menu")} onStatsRefresh={refreshStats} />);
-  if (view === "marketplace") return subPage("Marketplace", <Marketplace characters={characters} onBack={() => cycleView("menu")} />);
   if (view === "adventure") return subPage("Adventure", <AdventureMode characters={characters} onExit={() => cycleView("menu")} onStatsRefresh={refreshStats} />);
+
+  if (view === "powerUp") return subPage("Power Up", <PowerUp characters={characters} onBack={() => cycleView("menu")} onStatsRefresh={refreshStats} />);
 
   // My Army page
   if (view === "army") {
@@ -647,14 +646,14 @@ export default function Home() {
             <span style={{ fontSize: '0.55rem', color: 'rgba(220,38,38,0.5)' }}>Card battle vs AI or online</span>
           </button>
 
-          {/* Marketplace */}
-          <button onClick={() => cycleView("marketplace")}
+          {/* Marketplace (external) */}
+          <a href="https://marketplace.memefortrees.com" target="_blank" rel="noopener noreferrer"
             className="flex flex-col items-center gap-3 px-6 py-8 rounded-2xl transition-all hover:scale-[1.02]"
             style={{ background: 'rgba(251,191,36,0.1)', border: '2px solid rgba(251,191,36,0.3)', boxShadow: '0 0 25px rgba(251,191,36,0.05)' }}>
             <span className="text-4xl">🛒</span>
             <span className="text-sm font-black tracking-widest uppercase" style={{ color: 'rgba(251,191,36,0.9)' }}>Marketplace</span>
             <span style={{ fontSize: '0.55rem', color: 'rgba(251,191,36,0.5)' }}>Buy and sell hero NFTs</span>
-          </button>
+          </a>
 
           {/* 1v1 */}
           <button onClick={() => { cycleView("1v1"); setBattleMode(true); setSelectedFighters([]); }}

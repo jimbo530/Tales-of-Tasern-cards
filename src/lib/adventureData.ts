@@ -10,6 +10,14 @@ export const STORY_NPCS: Set<string> = new Set(
   ].map(a => a.toLowerCase())
 );
 
+export type RewardItem = {
+  id: string;
+  name: string;
+  category: "food" | "resource" | "crafted" | "equipment";
+  weight: number;
+  icon: string;
+};
+
 export type Encounter = {
   name: string;
   description: string;
@@ -19,6 +27,9 @@ export type Encounter = {
   npcAddress?: string; // NFT contract address for a single named NPC opponent
   npcAddresses?: string[]; // Multiple NPC opponents
   joinsParty?: string; // NPC address that joins your party on win (if party < 4)
+  gateRequiresAny?: string[]; // chapter IDs — encounter locked until ANY one is completed
+  gateRequiresAnyItem?: string[]; // item IDs — encounter locked until player has ANY one
+  rewardItems?: RewardItem[]; // items granted on victory
 };
 
 // Hierarchical region tree — world → regions → sub-areas
@@ -34,6 +45,9 @@ export const REGIONS: Region[] = [
   { id: "londa",      name: "Londa",      parent: "world",  mapImage: "/londa-map.jpg" },
   { id: "leaving-home", name: "Leaving Home", parent: "londa", mapImage: "/adventure-level1.webp" },
   { id: "newbsberd",  name: "Newbsberd",  parent: "londa",  mapImage: "/newbsberd-city.png" },
+  { id: "orkville",  name: "Orkville",  parent: "londa",  mapImage: "/adventure-level1.webp" },
+  { id: "wickleberry-estate", name: "Wickleberry Estate", parent: "londa", mapImage: "/adventure-level1.webp" },
+  { id: "goblin-cave", name: "Goblin Cave", parent: "londa", mapImage: "/adventure-level1.webp" },
 ];
 
 export type Chapter = {
@@ -58,7 +72,7 @@ export const ADVENTURE_CHAPTERS: Chapter[] = [
     id: "leaving-home",
     title: "Leaving Home",
     maxParty: 4,
-    mapPin: { x: 15, y: 65, region: "londa" },
+    mapPin: { x: 37.2, y: 59.6, region: "londa" },
     intro: "At the heart of a quiet crossroads village, where warm lanternlight spills across worn cobblestones and every path seems to lead somewhere important, your journey begins. Six humble homes ring the central well\u2014each belonging to a friend who has walked a different road, learned a different truth, and now waits to share what they know.",
     image: "/adventure-level1.webp",
     encounters: [
@@ -155,28 +169,29 @@ export const ADVENTURE_CHAPTERS: Chapter[] = [
 
   // ═══════════════════════════════════════════════════════════════
   // The Road — 3 standalone encounters between villages
+  // Order: Wolf → Goblin → Weeds
   // ═══════════════════════════════════════════════════════════════
   {
     id: "path-1",
-    title: "Goblin Ambush",
+    title: "The Wolf Pack",
     requires: ["leaving-home"],
     maxParty: 6,
-    mapPin: { x: 28, y: 55, region: "londa" },
-    intro: "The village gate closes behind you. The east road stretches through dense forest. You haven't been walking an hour when trouble finds you.",
+    mapPin: { x: 28, y: 60.6, region: "londa" },
+    intro: "Dusk falls fast under the canopy. You smell them before you see them — wet fur and old blood.",
     image: "/adventure-level1.webp",
     encounters: [{
-      name: "Goblin Ambush",
-      description: "You haven't been walking an hour when a shrill whistle cuts through the trees. Green-skinned figures drop from the branches and scramble up from ditches on both sides of the road. Goblins \u2014 a raiding party, armed with crude spears and stolen daggers. Their leader, barely taller than the others, jabs a crooked finger at you and shrieks a command. They fan out to surround you, quick and vicious. There's no negotiating with hunger like theirs.",
+      name: "The Wolf Pack",
+      description: "Dusk falls fast under the canopy. You smell them before you see them \u2014 wet fur and old blood. The first wolf appears on the road ahead, head low, yellow eyes fixed on you. Then another emerges from the brush to your left. And another to your right. The pack has been tracking you for miles, waiting for the light to fade. The alpha lets out a low growl that vibrates in your chest. They don't charge \u2014 not yet. They circle, testing, probing for weakness. When they come, they'll come all at once.",
       aiDeckBias: "aggressive",
       aiStrength: 0.6,
       mftReward: 800,
       npcAddresses: [
-        "0x99b772412C0D6E0fB31f227eCFf4E92B98379Fa8",
-        "0x99b772412C0D6E0fB31f227eCFf4E92B98379Fa8",
-        "0x99b772412C0D6E0fB31f227eCFf4E92B98379Fa8",
-        "0x99b772412C0D6E0fB31f227eCFf4E92B98379Fa8",
-        "0x99b772412C0D6E0fB31f227eCFf4E92B98379Fa8",
-        "0x99b772412C0D6E0fB31f227eCFf4E92B98379Fa8",
+        "0xaF92bc25a44bf43eC4100cAd6eA3620523C7DAce",
+        "0xaF92bc25a44bf43eC4100cAd6eA3620523C7DAce",
+        "0xaF92bc25a44bf43eC4100cAd6eA3620523C7DAce",
+        "0xaF92bc25a44bf43eC4100cAd6eA3620523C7DAce",
+        "0xaF92bc25a44bf43eC4100cAd6eA3620523C7DAce",
+        "0xaF92bc25a44bf43eC4100cAd6eA3620523C7DAce",
       ],
     }],
     completionBonus: 600,
@@ -184,31 +199,25 @@ export const ADVENTURE_CHAPTERS: Chapter[] = [
   },
   {
     id: "path-2",
-    title: "The Wolf Pack",
+    title: "Goblin Ambush",
     requires: ["path-1"],
     maxParty: 6,
-    mapPin: { x: 40, y: 48, region: "londa" },
-    intro: "Dusk falls fast under the canopy. You smell them before you see them \u2014 wet fur and old blood.",
+    mapPin: { x: 30.6, y: 60.9, region: "londa" },
+    intro: "The village gate closes behind you. The east road stretches through dense forest. You haven't been walking an hour when trouble finds you.",
     image: "/adventure-level1.webp",
     encounters: [{
-      name: "The Wolf Pack",
-      description: "Dusk falls fast under the canopy. You smell them before you see them \u2014 wet fur and old blood. The first wolf appears on the road ahead, head low, yellow eyes fixed on you. Then another emerges from the brush to your left. And another to your right. The pack has been tracking you for miles, waiting for the light to fade. The alpha lets out a low growl that vibrates in your chest. They don't charge \u2014 not yet. They circle, testing, probing for weakness. When they come, they'll come all at once.",
+      name: "Goblin Ambush",
+      description: "You haven't been walking an hour when a shrill whistle cuts through the trees. Green-skinned figures drop from the branches and scramble up from ditches on both sides of the road. Goblins \u2014 a raiding party, armed with crude spears and stolen daggers. Their leader, barely taller than the others, jabs a crooked finger at you and shrieks a command. They fan out to surround you, quick and vicious. There's no negotiating with hunger like theirs.",
       aiDeckBias: "aggressive",
       aiStrength: 0.8,
       mftReward: 1000,
       npcAddresses: [
-        "0xaF92bc25a44bf43eC4100cAd6eA3620523C7DAce",
-        "0xaF92bc25a44bf43eC4100cAd6eA3620523C7DAce",
-        "0xaF92bc25a44bf43eC4100cAd6eA3620523C7DAce",
-        "0xaF92bc25a44bf43eC4100cAd6eA3620523C7DAce",
-        "0xaF92bc25a44bf43eC4100cAd6eA3620523C7DAce",
-        "0xaF92bc25a44bf43eC4100cAd6eA3620523C7DAce",
-        "0xaF92bc25a44bf43eC4100cAd6eA3620523C7DAce",
-        "0xaF92bc25a44bf43eC4100cAd6eA3620523C7DAce",
-        "0xaF92bc25a44bf43eC4100cAd6eA3620523C7DAce",
-        "0xaF92bc25a44bf43eC4100cAd6eA3620523C7DAce",
-        "0xaF92bc25a44bf43eC4100cAd6eA3620523C7DAce",
-        "0xaF92bc25a44bf43eC4100cAd6eA3620523C7DAce",
+        "0x99b772412C0D6E0fB31f227eCFf4E92B98379Fa8",
+        "0x99b772412C0D6E0fB31f227eCFf4E92B98379Fa8",
+        "0x99b772412C0D6E0fB31f227eCFf4E92B98379Fa8",
+        "0x99b772412C0D6E0fB31f227eCFf4E92B98379Fa8",
+        "0x99b772412C0D6E0fB31f227eCFf4E92B98379Fa8",
+        "0x99b772412C0D6E0fB31f227eCFf4E92B98379Fa8",
       ],
     }],
     completionBonus: 800,
@@ -219,7 +228,7 @@ export const ADVENTURE_CHAPTERS: Chapter[] = [
     title: "Lost in the Weeds",
     requires: ["path-2"],
     maxParty: 6,
-    mapPin: { x: 52, y: 42, region: "londa" },
+    mapPin: { x: 33.2, y: 60.3, region: "londa" },
     intro: "The road narrows and vanishes, swallowed by undergrowth. Everything in this tangle wants to kill you.",
     image: "/adventure-level1.webp",
     encounters: [{
@@ -258,7 +267,7 @@ export const ADVENTURE_CHAPTERS: Chapter[] = [
     title: "Newbsberd",
     requires: ["path-3"],
     maxParty: 6,
-    mapPin: { x: 65, y: 35, region: "londa" },
+    mapPin: { x: 44.3, y: 57.7, region: "londa" },
     intro: "The road from the wilds feeds into a wider trade route, and beyond it the walls of Newbsberd rise like a grey cliff face above the sprawl of shanties and market stalls that cling to its base. Somewhere behind those walls lies passage deeper into the world \u2014 but first you have to get through.",
     image: "/newbsberd-city.png",
     encounters: [
@@ -334,48 +343,35 @@ export const ADVENTURE_CHAPTERS: Chapter[] = [
           "0xB22bf25A33a539e769CEb48cad5E2C0951bEfb21",
         ],
       },
+      {
+        name: "The Closed Gates",
+        description: "The inner gates are twenty feet of banded iron, shut tight. A sergeant stands before them with a squad of guards and a scowl that could curdle milk. \"Gates are closed. Ork war-band spotted on the north road \u2014 we're on lockdown until the threat is dealt with.\"\n\nYou hold up the courier's sack of mail. The sergeant's eyes widen. \"That's the garrison post \u2014 we've been waiting for that dispatch for three days.\" He reaches for it, then hesitates, looking past you at the road. \"But we've got a bigger problem. A pack of ork scouts made it past the outer patrols. They're in the ruins just north of here, and if they signal the main band, this whole district burns.\"\n\nHe meets your eyes. \"Deliver the mail and I'll open the gate. Or better yet \u2014 help us clear those orks AND deliver the mail, and I'll see you get more than just passage. What do you say?\"",
+        aiDeckBias: "balanced",
+        aiStrength: 0.8,
+        mftReward: 2000,
+        gateRequiresAnyItem: ["wickleberry-pass", "orc-clan-sigil"], // need pass from either quest line
+        npcAddresses: [
+          "0x4717ef81F44Ff2cd3fd7C51299595f1daD682631",
+          "0x78cD29b5095D74d1AB90AC74023F5ecC9e41Cc87",
+          "0x153Ec2E5DA59370c05Db0826a6489ebd348fe471",
+          "0x9a1e5D7D2D68B6BA35958Dbb9d8db1090c1C6401",
+          "0x46faf62987F9C270f93f1918Bf1c6de02De7010f",
+          "0xA4A12DEA67D09ec7FF89e8E9B0d71857D796180B",
+        ],
+      },
     ],
     completionBonus: 2500,
   },
 
   // ═══════════════════════════════════════════════════════════════
-  // The Closed Gates — unlocks after completing Orkville OR the mail quest
-  // ═══════════════════════════════════════════════════════════════
-  {
-    id: "closed-gates",
-    title: "The Closed Gates",
-    requiresAny: ["or", "nr"],
-    maxParty: 6,
-    mapPin: { x: 72, y: 30, region: "londa" },
-    intro: "The inner gates of Newbsberd are shut and barred. A sergeant with a garrison squad blocks passage.",
-    image: "/newbsberd-city.png",
-    encounters: [{
-      name: "The Closed Gates",
-      description: "The inner gates are twenty feet of banded iron, shut tight. A sergeant stands before them with a squad of guards and a scowl that could curdle milk. \"Gates are closed. Ork war-band spotted on the north road \u2014 we're on lockdown until the threat is dealt with.\"\n\nYou hold up the courier's sack of mail. The sergeant's eyes widen. \"That's the garrison post \u2014 we've been waiting for that dispatch for three days.\" He reaches for it, then hesitates, looking past you at the road. \"But we've got a bigger problem. A pack of ork scouts made it past the outer patrols. They're in the ruins just north of here, and if they signal the main band, this whole district burns.\"\n\nHe meets your eyes. \"Deliver the mail and I'll open the gate. Or better yet \u2014 help us clear those orks AND deliver the mail, and I'll see you get more than just passage. What do you say?\"",
-      aiDeckBias: "balanced",
-      aiStrength: 0.8,
-      mftReward: 2000,
-      npcAddresses: [
-        "0x4717ef81F44Ff2cd3fd7C51299595f1daD682631",
-        "0x78cD29b5095D74d1AB90AC74023F5ecC9e41Cc87",
-        "0x153Ec2E5DA59370c05Db0826a6489ebd348fe471",
-        "0x9a1e5D7D2D68B6BA35958Dbb9d8db1090c1C6401",
-        "0x46faf62987F9C270f93f1918Bf1c6de02De7010f",
-        "0xA4A12DEA67D09ec7FF89e8E9B0d71857D796180B",
-      ],
-    }],
-    completionBonus: 2500,
-  },
-
-  // ═══════════════════════════════════════════════════════════════
-  // OR — Ork Road to Orkville (branches from Closed Gates)
+  // OR — Ork Road to Orkville (branches from Newbsberd)
   // ═══════════════════════════════════════════════════════════════
   {
     id: "or",
     title: "Ork Road",
     requires: ["newbsberd"],
     maxParty: 9,
-    mapPin: { x: 78, y: 20, region: "londa" },
+    mapPin: { x: 41.1, y: 58, region: "londa" },
     intro: "The north road out of Newbsberd climbs into the hills. Smoke rises on the horizon \u2014 Orkville, the war-band's stronghold.",
     image: "/adventure-level1.webp",
     encounters: [{
@@ -405,7 +401,7 @@ export const ADVENTURE_CHAPTERS: Chapter[] = [
     title: "Wickleberry Lane",
     requires: ["newbsberd"],
     maxParty: 9,
-    mapPin: { x: 80, y: 40, region: "londa" },
+    mapPin: { x: 38.7, y: 63.8, region: "londa" },
     intro: "The cobbled lane winds through manicured hedgerows toward the Wickleberry Estate. The courier's mail sack weighs heavy on your shoulder.",
     image: "/adventure-level1.webp",
     encounters: [{
@@ -425,5 +421,290 @@ export const ADVENTURE_CHAPTERS: Chapter[] = [
     }],
     completionBonus: 2000,
     cooldownMs: 7 * 24 * 60 * 60 * 1000,
+  },
+
+  // ═══════════════════════════════════════════════════════════════
+  // Wickleberry Lane — travel encounters 2 & 3
+  // ═══════════════════════════════════════════════════════════════
+  {
+    id: "wb2",
+    title: "Wickleberry Lane 2",
+    requires: ["nr"],
+    maxParty: 9,
+    mapPin: { x: 36.6, y: 66.6, region: "londa" },
+    intro: "The lane continues south through increasingly wild hedgerows. The manicured gardens are long behind you.",
+    image: "/adventure-level1.webp",
+    encounters: [{
+      name: "Wickleberry Lane 2",
+      description: "The hedgerows grow tall and untamed here, blocking the sun. Something rustles in the thicket ahead.",
+      aiDeckBias: "balanced",
+      aiStrength: 0.9,
+      mftReward: 2200,
+      npcAddresses: [
+        "0x67052bFEB30203A7bEEEAD76b58f51B931Ff4d1C",
+        "0xE93889FC55B4c95227A0499d175890d001410D17",
+        "0x5B5A2bcfd8b19814bCB6BE9091a892FF0ceB23c6",
+        "0x11Bc51A6726A588D65ED7087E5F4eD853EC0F390",
+        "0xB22bf25A33a539e769CEb48cad5E2C0951bEfb21",
+        "0x4717ef81F44Ff2cd3fd7C51299595f1daD682631",
+        "0x78cD29b5095D74d1AB90AC74023F5ecC9e41Cc87",
+      ],
+    }],
+    completionBonus: 2200,
+    cooldownMs: 7 * 24 * 60 * 60 * 1000,
+  },
+  {
+    id: "wbl3",
+    title: "Wickleberry Lane 3",
+    requires: ["wb2"],
+    maxParty: 9,
+    mapPin: { x: 34.8, y: 68.8, region: "londa" },
+    intro: "The Wickleberry Estate looms ahead, its iron gates rusted shut. The final stretch is the most dangerous.",
+    image: "/adventure-level1.webp",
+    encounters: [{
+      name: "Wickleberry Lane 3",
+      description: "The estate gates are in sight, but a fortified camp blocks the road. These aren't common bandits — they're organized, armored, and waiting.",
+      aiDeckBias: "defensive",
+      aiStrength: 0.95,
+      mftReward: 2500,
+      npcAddresses: [
+        "0xE93889FC55B4c95227A0499d175890d001410D17",
+        "0x5B5A2bcfd8b19814bCB6BE9091a892FF0ceB23c6",
+        "0x11Bc51A6726A588D65ED7087E5F4eD853EC0F390",
+        "0xB22bf25A33a539e769CEb48cad5E2C0951bEfb21",
+        "0x4717ef81F44Ff2cd3fd7C51299595f1daD682631",
+        "0x78cD29b5095D74d1AB90AC74023F5ecC9e41Cc87",
+        "0x153Ec2E5DA59370c05Db0826a6489ebd348fe471",
+        "0x9a1e5D7D2D68B6BA35958Dbb9d8db1090c1C6401",
+      ],
+    }],
+    completionBonus: 2500,
+    cooldownMs: 7 * 24 * 60 * 60 * 1000,
+  },
+
+  // ═══════════════════════════════════════════════════════════════
+  // Ork Road — travel encounters 2 & 3
+  // ═══════════════════════════════════════════════════════════════
+  {
+    id: "or-2",
+    title: "Ork Road 2",
+    requires: ["or"],
+    maxParty: 9,
+    mapPin: { x: 42.7, y: 56.5, region: "londa" },
+    intro: "The road climbs higher into ork territory. War drums echo from the ridgeline.",
+    image: "/adventure-level1.webp",
+    encounters: [{
+      name: "Ork Road 2",
+      description: "An ork patrol blocks the road ahead — war-painted and armed with heavy iron weapons. They've been expecting company.",
+      aiDeckBias: "aggressive",
+      aiStrength: 0.9,
+      mftReward: 2200,
+      npcAddresses: [
+        "0x9de88faa0dbcfc75534d1b4fd277dadffcc4fd30",
+        "0xfaf9a6b6409b3e69f7d3b38099b41c45bbc29ba5",
+        "0xea39112525f9169038435cF22f82e5436e0BCC4F",
+        "0x691e4bEF9A83C00f8A35ed601090E42A8b953c77",
+        "0xEE67c60d0E9687BB6D4cA2D90357FC8155F3c2c8",
+        "0xE2E9C314E1AD0764b6ef22B6408674a33F84FD41",
+        "0x44B374923178d4f80C3C158824F11Ac4A6D6266d",
+      ],
+    }],
+    completionBonus: 2200,
+    cooldownMs: 7 * 24 * 60 * 60 * 1000,
+  },
+  {
+    id: "or3",
+    title: "Ork Road 3",
+    requires: ["or-2"],
+    maxParty: 9,
+    mapPin: { x: 45.8, y: 55.8, region: "londa" },
+    intro: "Orkville's palisade walls rise from the smoke. This is the final push.",
+    image: "/adventure-level1.webp",
+    encounters: [{
+      name: "Ork Road 3",
+      description: "The gates of Orkville stand before you, guarded by the war-band's elite. Break through here and you'll have earned passage back to Newbsberd with proof the ork threat is broken.",
+      aiDeckBias: "aggressive",
+      aiStrength: 0.95,
+      mftReward: 2500,
+      npcAddresses: [
+        "0xfaf9a6b6409b3e69f7d3b38099b41c45bbc29ba5",
+        "0xea39112525f9169038435cF22f82e5436e0BCC4F",
+        "0x691e4bEF9A83C00f8A35ed601090E42A8b953c77",
+        "0xEE67c60d0E9687BB6D4cA2D90357FC8155F3c2c8",
+        "0xE2E9C314E1AD0764b6ef22B6408674a33F84FD41",
+        "0x44B374923178d4f80C3C158824F11Ac4A6D6266d",
+        "0xf6Af75e0E275ade819BDBaAECd67C4A7F78736a5",
+        "0x9de88faa0dbcfc75534d1b4fd277dadffcc4fd30",
+      ],
+    }],
+    completionBonus: 2500,
+    cooldownMs: 7 * 24 * 60 * 60 * 1000,
+  },
+
+  // ═══════════════════════════════════════════════════════════════
+  // Orkville — destination at end of Ork Road, grants Orc Clan Sigil
+  // ═══════════════════════════════════════════════════════════════
+  {
+    id: "orkville",
+    title: "Orkville",
+    requires: ["or3"],
+    maxParty: 9,
+    mapPin: { x: 48.5, y: 54, region: "londa" },
+    intro: "The palisade gates of Orkville groan open. Beyond them lies a sprawling war-camp turned settlement — crude longhouses, forges belching black smoke, and the massive iron totem of the Ork Clan at its center. You've fought your way here. Now you must prove you deserve to leave alive.",
+    image: "/adventure-level1.webp",
+    encounters: [
+      {
+        name: "The Outer Pits",
+        description: "The entrance to Orkville funnels through a gauntlet of fighting pits. Ork warriors line the raised edges, jeering and hammering their shields. A massive ork with a bone-studded club blocks the path. \"No soft-skin walks through Orkville without bleeding first.\" He spits at your feet. \"The pits decide if you're worth talking to or worth eating.\"\n\nThe crowd roars. Two more orks drop into the pit behind you. There's no way out but through.",
+        aiDeckBias: "aggressive",
+        aiStrength: 1.0,
+        mftReward: 3000,
+        npcAddresses: [
+          "0xf6Af75e0E275ade819BDBaAECd67C4A7F78736a5",
+          "0x44B374923178d4f80C3C158824F11Ac4A6D6266d",
+          "0x9de88faa0dbcfc75534d1b4fd277dadffcc4fd30",
+          "0xfaf9a6b6409b3e69f7d3b38099b41c45bbc29ba5",
+          "0xea39112525f9169038435cF22f82e5436e0BCC4F",
+          "0x691e4bEF9A83C00f8A35ed601090E42A8b953c77",
+          "0xEE67c60d0E9687BB6D4cA2D90357FC8155F3c2c8",
+          "0xE2E9C314E1AD0764b6ef22B6408674a33F84FD41",
+        ],
+      },
+      {
+        name: "The War Chief's Hall",
+        description: "You survive the pits and the jeering turns to grudging silence. A grizzled ork shaman leads you to the longhouse at the camp's center, where War Chief Grukk sits on a throne of shields and broken weapons. He's enormous — scarred from a hundred battles, one tusk shattered, the other capped in iron.\n\n\"You killed my scouts on the road. You fought through my warriors.\" He leans forward. \"Good. The weak ones deserved it.\" He stands, drawing a massive jagged blade. \"But I don't hand the Sigil to anyone who hasn't beaten me personally. My clan respects strength — nothing else.\"\n\nThe hall clears. Grukk's personal guard flanks him — the best fighters Orkville has.",
+        aiDeckBias: "aggressive",
+        aiStrength: 1.1,
+        mftReward: 4000,
+        rewardItems: [{
+          id: "orc-clan-sigil",
+          name: "Orc Clan Sigil",
+          category: "equipment",
+          weight: 0.5,
+          icon: "\uD83D\uDEE1\uFE0F",
+        }],
+        npcAddresses: [
+          "0xf6Af75e0E275ade819BDBaAECd67C4A7F78736a5",
+          "0x44B374923178d4f80C3C158824F11Ac4A6D6266d",
+          "0x9de88faa0dbcfc75534d1b4fd277dadffcc4fd30",
+          "0xfaf9a6b6409b3e69f7d3b38099b41c45bbc29ba5",
+          "0xea39112525f9169038435cF22f82e5436e0BCC4F",
+          "0x691e4bEF9A83C00f8A35ed601090E42A8b953c77",
+          "0xEE67c60d0E9687BB6D4cA2D90357FC8155F3c2c8",
+          "0xE2E9C314E1AD0764b6ef22B6408674a33F84FD41",
+          "0x67052bFEB30203A7bEEEAD76b58f51B931Ff4d1C",
+        ],
+      },
+    ],
+    completionBonus: 5000,
+  },
+
+  // ═══════════════════════════════════════════════════════════════
+  // Wickleberry Estate — destination at end of WL, grants Wickleberry Pass
+  // ═══════════════════════════════════════════════════════════════
+  {
+    id: "wickleberry-estate",
+    title: "Wickleberry Estate",
+    requires: ["wbl3"],
+    maxParty: 9,
+    mapPin: { x: 33, y: 71, region: "londa" },
+    intro: "The iron gates of the Wickleberry Estate hang open on rusted hinges. What was once the grandest manor south of Newbsberd is now half-reclaimed by creeping vines and dark magic. Lady Wickleberry still rules from within — but what she's become is anyone's guess.",
+    image: "/adventure-level1.webp",
+    encounters: [
+      {
+        name: "The Overgrown Grounds",
+        description: "The estate gardens have gone feral. Hedgerows that were once trimmed into elegant shapes now form a living maze, their branches thick with thorns and pulsing with an unnatural green light. You hear movement in the maze — not animals, but the plants themselves shifting, closing paths behind you and opening new ones.\n\nFrom the hedge walls, twisted plant-creatures lash out with vine-whips and thorn-barbs. The deeper you go, the thicker they get. Someone — or something — is directing them.",
+        aiDeckBias: "defensive",
+        aiStrength: 1.0,
+        mftReward: 3000,
+        npcAddresses: [
+          "0x212626D66E64C9C293A845687dB700c16466586e",
+          "0x212626D66E64C9C293A845687dB700c16466586e",
+          "0x6AD5621f5719A6b32d0Ea9dd4493ca6Ac0639D4B",
+          "0x6AD5621f5719A6b32d0Ea9dd4493ca6Ac0639D4B",
+          "0x42CE5e89D0D5f841E668E63310b96ABE159f5761",
+          "0x42CE5e89D0D5f841E668E63310b96ABE159f5761",
+          "0x7F55796f79352Ab707e7FC41dD0B317Be6CBd165",
+          "0x7F55796f79352Ab707e7FC41dD0B317Be6CBd165",
+        ],
+      },
+      {
+        name: "Lady Wickleberry's Court",
+        description: "The manor's great hall is half-collapsed, open to the sky. Moonlight streams through the broken roof onto a throne of living wood where Lady Wickleberry sits, draped in robes of woven ivy. Her eyes glow faintly green. She is not undead — she is something else. Something older.\n\n\"You brought the mail. How quaint.\" She rises, and the floor cracks as roots surge upward. \"I wrote those letters months ago, begging Newbsberd for help. They sent nothing. So I helped myself.\" She extends a hand and the vines coil around her arm like a gauntlet. \"Prove you're stronger than the cowards who abandoned me, and I'll give you the Pass. Fail, and you'll join my garden.\"\n\nHer guard — a mix of enthralled soldiers and plant-constructs — closes in around you.",
+        aiDeckBias: "magic",
+        aiStrength: 1.1,
+        mftReward: 4000,
+        rewardItems: [{
+          id: "wickleberry-pass",
+          name: "Wickleberry Pass",
+          category: "equipment",
+          weight: 0.1,
+          icon: "\uD83D\uDCDC",
+        }],
+        npcAddresses: [
+          "0x212626D66E64C9C293A845687dB700c16466586e",
+          "0x6AD5621f5719A6b32d0Ea9dd4493ca6Ac0639D4B",
+          "0x42CE5e89D0D5f841E668E63310b96ABE159f5761",
+          "0x7F55796f79352Ab707e7FC41dD0B317Be6CBd165",
+          "0xA68F8d50edDCD01BDA6849D499Db50090c3695a7",
+          "0xEF5ABF519703Ee8830666448DE49cd35953a5a0C",
+          "0x78cD29b5095D74d1AB90AC74023F5ecC9e41Cc87",
+          "0x153Ec2E5DA59370c05Db0826a6489ebd348fe471",
+          "0x9a1e5D7D2D68B6BA35958Dbb9d8db1090c1C6401",
+        ],
+      },
+    ],
+    completionBonus: 5000,
+  },
+
+  // ═══════════════════════════════════════════════════════════════
+  // Goblin Cave — branches off Wickleberry Lane 2 (wb2)
+  // ═══════════════════════════════════════════════════════════════
+  {
+    id: "goblin-cave",
+    title: "Goblin Cave",
+    requires: ["wb2"],
+    maxParty: 9,
+    mapPin: { x: 34, y: 64.5, region: "londa" },
+    intro: "A jagged crack in the hillside, half-hidden by brambles, exhales cold air that stinks of rotting meat and goblin filth. Drag marks in the mud lead inside. Whatever the goblins are hoarding in there, they've been busy.",
+    image: "/adventure-level1.webp",
+    encounters: [
+      {
+        name: "The Cave Mouth",
+        description: "The entrance narrows to a chokepoint barely wide enough for two abreast. Crude torches gutter in iron sconces driven into the rock. Goblin sentries crouch on ledges above, armed with crossbows and jars of something that smells flammable. They screech an alarm the moment they see you.\n\nRocks tumble from above — they've rigged a deadfall. You dodge the worst of it, but now the goblins are pouring from side tunnels, cackling and stabbing. The tight quarters make it impossible to flank. You'll have to push straight through.",
+        aiDeckBias: "aggressive",
+        aiStrength: 0.9,
+        mftReward: 2500,
+        npcAddresses: [
+          "0x99b772412C0D6E0fB31f227eCFf4E92B98379Fa8",
+          "0x99b772412C0D6E0fB31f227eCFf4E92B98379Fa8",
+          "0x99b772412C0D6E0fB31f227eCFf4E92B98379Fa8",
+          "0x99b772412C0D6E0fB31f227eCFf4E92B98379Fa8",
+          "0x99b772412C0D6E0fB31f227eCFf4E92B98379Fa8",
+          "0x99b772412C0D6E0fB31f227eCFf4E92B98379Fa8",
+          "0x99b772412C0D6E0fB31f227eCFf4E92B98379Fa8",
+          "0x99b772412C0D6E0fB31f227eCFf4E92B98379Fa8",
+        ],
+      },
+      {
+        name: "The Goblin King's Hoard",
+        description: "The cave opens into a vast underground chamber, its ceiling lost in darkness. Stolen goods are piled everywhere — merchant crates, weapons, bolts of cloth, barrels of food. At the center, sitting on a stack of crates like a makeshift throne, is the Goblin King — twice the size of his kin, wearing a battered iron crown and wielding a cleaver made from a broken greatsword.\n\n\"More meat walks in!\" He cackles, and the chamber erupts with goblin war-cries. Dozens of them scramble from the shadows, from tunnels, from behind the piles of loot. The Goblin King points his cleaver at you. \"Kill them! Take their stuff! Add it to the hoard!\"",
+        aiDeckBias: "aggressive",
+        aiStrength: 1.0,
+        mftReward: 3500,
+        npcAddresses: [
+          "0x99b772412C0D6E0fB31f227eCFf4E92B98379Fa8",
+          "0x99b772412C0D6E0fB31f227eCFf4E92B98379Fa8",
+          "0x99b772412C0D6E0fB31f227eCFf4E92B98379Fa8",
+          "0x99b772412C0D6E0fB31f227eCFf4E92B98379Fa8",
+          "0x99b772412C0D6E0fB31f227eCFf4E92B98379Fa8",
+          "0x99b772412C0D6E0fB31f227eCFf4E92B98379Fa8",
+          "0x99b772412C0D6E0fB31f227eCFf4E92B98379Fa8",
+          "0x99b772412C0D6E0fB31f227eCFf4E92B98379Fa8",
+          "0x99b772412C0D6E0fB31f227eCFf4E92B98379Fa8",
+        ],
+      },
+    ],
+    completionBonus: 4000,
   },
 ];

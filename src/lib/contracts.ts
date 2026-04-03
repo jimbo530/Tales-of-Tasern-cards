@@ -13,6 +13,7 @@ export const GAME_NFTS: GameNft[] = [
   { name: "Sir Garrick Lionheart",     contractAddress: "0xea39112525f9169038435cF22f82e5436e0BCC4F", chain: "base" },
   { name: "Captain Brinebeak",        contractAddress: "0x691e4bEF9A83C00f8A35ed601090E42A8b953c77", chain: "base" },
   { name: "Gruk Skullsplitter",         contractAddress: "0x44B374923178d4f80C3C158824F11Ac4A6D6266d", chain: "base" },
+  { name: "Krug Emberfist",             contractAddress: "0xf6Af75e0E275ade819BDBaAECd67C4A7F78736a5", chain: "base" },
   { name: "Future Funders",             contractAddress: "0xEE67c60d0E9687BB6D4cA2D90357FC8155F3c2c8", chain: "polygon" },
   { name: "Future Funder",              contractAddress: "0xE2E9C314E1AD0764b6ef22B6408674a33F84FD41", chain: "polygon" },
   { name: "Future Funder Archibald",    contractAddress: "0x67052bFEB30203A7bEEEAD76b58f51B931Ff4d1C", chain: "polygon" },

@@ -68,7 +68,6 @@ export type NftCharacter = {
   stats: { attack: number; mAtk: number; eAtk: number; fAtk: number; def: number; mDef: number; hp: number; healing: number; armorPierce: number; shieldWall: number; magicShield: number; lifesteal: number; aoeDamage: number; rally: number; charMultiplier: number; magicMultiplier: number; mana: number };
   tokenAmounts: TokenAmount[];
   usdBacking: number;
-  forSale: boolean;
 };
 
 export function useNftStats() {
@@ -195,8 +194,7 @@ export function useNftStats() {
           setCachedOwnership(address, ownershipMap);
         }
 
-        // Merge API data with ownership + seller info
-        const sellerOwnedSet = new Set((data.sellerOwned ?? []).map((a: string) => a.toLowerCase()));
+        // Merge API data with ownership
         const characters: NftCharacter[] = data.characters.map((c: any) => ({
           name: c.name,
           contractAddress: c.contractAddress,
@@ -209,7 +207,6 @@ export function useNftStats() {
           stats: c.stats,
           tokenAmounts: c.tokenAmounts ?? [],
           usdBacking: c.usdBacking ?? 0,
-          forSale: sellerOwnedSet.has(c.contractAddress.toLowerCase()),
         }));
 
         setCharacters(characters);
@@ -280,14 +277,12 @@ export function useNftStats() {
         setCachedOwnership(address, ownershipMap);
       }
 
-      const sellerOwnedSet = new Set((data.sellerOwned ?? []).map((a: string) => a.toLowerCase()));
       const updated: NftCharacter[] = data.characters.map((c: any) => ({
         name: c.name, contractAddress: c.contractAddress, chain: c.chain ?? "base",
         tokenId: TOKEN_ID, metadataUri: c.metadataUri, imageUrl: c.imageUrl,
         owned: (ownershipMap.get(c.contractAddress.toLowerCase()) ?? 0) > 0,
         ownedCount: ownershipMap.get(c.contractAddress.toLowerCase()) ?? 0,
         stats: c.stats, tokenAmounts: c.tokenAmounts ?? [], usdBacking: c.usdBacking ?? 0,
-        forSale: sellerOwnedSet.has(c.contractAddress.toLowerCase()),
       }));
       setCharacters(updated);
       if (data.assetTotals) setAssetTotals(data.assetTotals);

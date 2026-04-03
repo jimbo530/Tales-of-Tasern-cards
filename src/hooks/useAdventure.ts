@@ -160,6 +160,18 @@ export function useAdventure(wallet?: string) {
       if (encounter.joinsParty && !newUnlocked.includes(encounter.joinsParty.toLowerCase())) {
         newUnlocked.push(encounter.joinsParty.toLowerCase());
       }
+      // Grant reward items (e.g. quest items like Wickleberry Pass, Orc Clan Sigil)
+      let newInventory = [...(s.inventory ?? [])];
+      if (encounter.rewardItems) {
+        for (const reward of encounter.rewardItems) {
+          const existing = newInventory.find(i => i.id === reward.id);
+          if (existing) {
+            existing.quantity += 1;
+          } else {
+            newInventory.push({ ...reward, quantity: 1 });
+          }
+        }
+      }
       const isLastEncounter = s.currentEncounter >= chapter.encounters.length - 1;
       if (isLastEncounter) {
         return {
@@ -170,9 +182,10 @@ export function useAdventure(wallet?: string) {
           chapterCooldowns: { ...(s.chapterCooldowns ?? {}), [chapter.id]: Date.now() },
           encounterCooldowns: newEncCooldowns,
           unlockedNpcs: newUnlocked,
+          inventory: newInventory,
         };
       }
-      return { ...s, mftEarned: newMft, phase: "reward", encounterCooldowns: newEncCooldowns, unlockedNpcs: newUnlocked };
+      return { ...s, mftEarned: newMft, phase: "reward", encounterCooldowns: newEncCooldowns, unlockedNpcs: newUnlocked, inventory: newInventory };
     });
   }
 
