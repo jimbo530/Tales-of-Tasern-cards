@@ -43,7 +43,7 @@ function defaultState(): AdventureState {
     encounterCooldowns: {},
     unlockedNpcs: [],
     phase: "map",
-    mapPosition: "village",
+    mapPosition: "leaving-home",
     inventory: [],
     carryCapacity: 50, // base carry capacity (weight units)
   };

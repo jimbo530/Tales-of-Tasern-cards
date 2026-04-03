@@ -65,7 +65,7 @@ export type NftCharacter = {
   imageUrl?: string;
   owned: boolean;
   ownedCount: number;
-  stats: { attack: number; mAtk: number; fAtk: number; def: number; mDef: number; hp: number; healing: number; charMultiplier: number; magicMultiplier: number; mana: number };
+  stats: { attack: number; mAtk: number; eAtk: number; fAtk: number; def: number; mDef: number; hp: number; healing: number; armorPierce: number; shieldWall: number; magicShield: number; lifesteal: number; aoeDamage: number; rally: number; charMultiplier: number; magicMultiplier: number; mana: number };
   tokenAmounts: TokenAmount[];
   usdBacking: number;
   forSale: boolean;

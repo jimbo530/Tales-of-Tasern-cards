@@ -1,3 +1,20 @@
+# Tales of Tasern — D20 Hex RPG
+
+This is the **D20 hex-grid RPG** (Tales of Tasern). It is NOT the card-battle game.
+
+- **Branch**: `d20-stats` — all D20 RPG work goes here
+- **System**: D&D 3.5e rules + 5e spells, stats adjusted −10 (min 1) from LP-backed NFTs
+- **Chains**: Base (primary) + Polygon — NFTs stats derived from LP token holdings
+- **Shared data**: `src/lib/contracts.ts` has GAME_NFTS (shared with card game on `main`)
+- **NFT stats**: Pulled from Supabase database, computed by `/api/stats` route
+- **Spell system**: Dual-edition (3.5 + 5e), 5e concentration for all spells
+- **Battle**: Hex-grid tactical combat in `src/lib/hexCombat.ts` + `src/hooks/useHexBattle.ts`
+- **World**: Hex world map with multi-party exploration, faction rep, follower system
+- **Economy**: Food-based pyramid, coin weight, carry capacity
+- **Deploy contracts**: Always use localhost HTML pages in `public/deploy-*.html` with embedded bytecode (never Remix/CLI)
+
+The card-battle game is on the `main` branch of this same repo. Never merge code between branches.
+
 @AGENTS.md
 
 <!-- VERCEL BEST PRACTICES START -->

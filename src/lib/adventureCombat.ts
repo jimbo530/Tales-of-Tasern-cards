@@ -21,7 +21,7 @@ export type CombatEvent = {
   killed: boolean;
 };
 
-export function makeUnit(char: NftCharacter, isPlayer: boolean, index: number, _strengthMult = 1): CombatUnit {
+export function makeUnit(char: NftCharacter, isPlayer: boolean, index: number): CombatUnit {
   const stats = computeStats(char.stats);
   // All characters fight at their real on-chain stats — no buffs or debuffs
   const s = stats;
@@ -51,17 +51,21 @@ function isFlanking(attacker: CombatUnit, opponents: CombatUnit[]): boolean {
 }
 
 function calcDamage(attacker: ComputedStats, defender: ComputedStats): {
-  phys: number; electric: number; fire: number; mana: number;
+  phys: number; magic: number; electric: number; fire: number; mana: number;
 } {
-  const attackerHasSpecial = attacker.mAtk > 0 || attacker.fAtk > 0;
-  const defenderHasSpecial = defender.mAtk > 0 || defender.fAtk > 0;
-  const effectiveMDef = defenderHasSpecial ? defender.mDef : defender.mDef + defender.mana;
-  const physArmor = defenderHasSpecial ? defender.def : defender.def + effectiveMDef * 0.5;
+  const attackerHasSpecial = attacker.mAtk > 0 || attacker.eAtk > 0 || attacker.fAtk > 0;
+  const defenderHasSpecial = defender.mAtk > 0 || defender.eAtk > 0 || defender.fAtk > 0;
+  // Armor piercing reduces effective defense (PKT passive)
+  const pierce = attacker.armorPierce;
+  const effectiveDef = defender.def * (1 - pierce);
+  const effectiveMDef = (defenderHasSpecial ? defender.mDef : defender.mDef + defender.mana) * (1 - pierce);
+  const physArmor = defenderHasSpecial ? effectiveDef : effectiveDef + effectiveMDef * 0.5;
 
   return {
     phys: Math.max(attacker.attack * (100 / (100 + physArmor)), 0.5),
-    electric: Math.max(attacker.mAtk * (100 / (100 + effectiveMDef)), 0),
-    fire: Math.max(attacker.fAtk * (100 / (100 + defender.def)), 0),
+    magic: Math.max(attacker.mAtk * (100 / (100 + effectiveMDef)), 0),
+    electric: Math.max(attacker.eAtk * (100 / (100 + effectiveMDef)), 0),
+    fire: Math.max(attacker.fAtk * (100 / (100 + effectiveDef)), 0),
     mana: attackerHasSpecial && attacker.mana > 0 ? Math.max(attacker.mana * (100 / (100 + effectiveMDef)), 0) : 0,
   };
 }
@@ -135,7 +139,59 @@ export function resolveRound(
   let p = players.map(u => ({ ...u, burns: [...u.burns] }));
   let e = enemies.map(u => ({ ...u, burns: [...u.burns] }));
 
-  // Resolve healing first — heal self, overflow to adjacent allies
+  // Rally (DDD) — shares % of all 4 stats to every ally on the grid, divided by 4
+  for (const units of [p, e]) {
+    for (const u of units) {
+      if (u.currentHp <= 0 || u.gridPos < 0 || !u.stats.rally || u.stats.rally <= 0) continue;
+      const r = u.stats.rally / 4;
+      const atkBonus = u.stats.attack * r;
+      const defBonus = u.stats.def * r;
+      const mAtkBonus = u.stats.mAtk * r;
+      const mDefBonus = u.stats.mDef * r;
+      for (const ally of units) {
+        if (ally === u || ally.currentHp <= 0 || ally.gridPos < 0) continue;
+        ally.stats = {
+          ...ally.stats,
+          attack: ally.stats.attack + atkBonus,
+          def: ally.stats.def + defBonus,
+          mAtk: ally.stats.mAtk + mAtkBonus,
+          mDef: ally.stats.mDef + mDefBonus,
+        };
+      }
+    }
+  }
+
+  // Shield Wall (LGP) — shares DEF to allies in the same column (vertical line)
+  for (const units of [p, e]) {
+    for (const u of units) {
+      if (u.currentHp <= 0 || u.gridPos < 0 || !u.stats.shieldWall || u.stats.shieldWall <= 0) continue;
+      const bonus = u.stats.def * u.stats.shieldWall;
+      const col = gridCol(u.gridPos);
+      for (const ally of units) {
+        if (ally === u || ally.currentHp <= 0 || ally.gridPos < 0) continue;
+        if (gridCol(ally.gridPos) === col) {
+          ally.stats = { ...ally.stats, def: ally.stats.def + bonus };
+        }
+      }
+    }
+  }
+
+  // Magic Shield (IGS) — shares MDEF to allies in the same row (horizontal line)
+  for (const units of [p, e]) {
+    for (const u of units) {
+      if (u.currentHp <= 0 || u.gridPos < 0 || !u.stats.magicShield || u.stats.magicShield <= 0) continue;
+      const bonus = u.stats.mDef * u.stats.magicShield;
+      const row = gridRow(u.gridPos);
+      for (const ally of units) {
+        if (ally === u || ally.currentHp <= 0 || ally.gridPos < 0) continue;
+        if (gridRow(ally.gridPos) === row) {
+          ally.stats = { ...ally.stats, mDef: ally.stats.mDef + bonus };
+        }
+      }
+    }
+  }
+
+  // Resolve healing — heal self, overflow to adjacent allies
   for (const units of [p, e]) {
     for (let i = 0; i < units.length; i++) {
       const u = units[i];
@@ -162,6 +218,20 @@ export function resolveRound(
             if (adjHeal > 0) events.push({ attackerName: "💚 Heal", targetName: ally.character.name, damage: adjHeal, damageType: "physical", targetHpAfter: ally.currentHp, killed: false });
           }
         }
+      }
+    }
+  }
+
+  // AOE Damage (DHG) — hits every enemy on the grid
+  const aoePairs: [CombatUnit[], CombatUnit[]][] = [[p, e], [e, p]];
+  for (const [attackers, defenders] of aoePairs) {
+    for (const u of attackers) {
+      if (u.currentHp <= 0 || u.gridPos < 0 || !u.stats.aoeDamage || u.stats.aoeDamage <= 0) continue;
+      const dmg = u.stats.aoeDamage;
+      for (const target of defenders) {
+        if (target.currentHp <= 0 || target.gridPos < 0) continue;
+        target.currentHp = Math.max(0, target.currentHp - dmg);
+        events.push({ attackerName: `💥 ${u.character.name}`, targetName: target.character.name, damage: dmg, damageType: "mana", targetHpAfter: target.currentHp, killed: target.currentHp <= 0 });
       }
     }
   }
@@ -247,7 +317,13 @@ export function resolveRound(
       target.currentHp = Math.max(0, target.currentHp - d);
       events.push({ attackerName: rollPrefix + player.character.name, targetName: target.character.name, damage: d, damageType: "physical", targetHpAfter: target.currentHp, killed: target.currentHp <= 0 });
     }
-    // Electric — also hits adjacent enemy
+    // Magic (force) — straight damage, no splash
+    if (dmg.magic > 0) {
+      const d = dmg.magic * totalMult;
+      target.currentHp = Math.max(0, target.currentHp - d);
+      events.push({ attackerName: rollPrefix + player.character.name, targetName: target.character.name, damage: d, damageType: "mana", targetHpAfter: target.currentHp, killed: target.currentHp <= 0 });
+    }
+    // Electric — also hits adjacent enemy (JLT tokens only)
     if (dmg.electric > 0) {
       const d = dmg.electric * totalMult;
       target.currentHp = Math.max(0, target.currentHp - d);
@@ -275,6 +351,15 @@ export function resolveRound(
       target.currentHp = Math.max(0, target.currentHp - d);
       events.push({ attackerName: rollPrefix + player.character.name, targetName: target.character.name, damage: d, damageType: "mana", targetHpAfter: target.currentHp, killed: target.currentHp <= 0 });
     }
+    // Lifesteal — heal attacker for % of total damage dealt (OGC passive)
+    if (player.stats.lifesteal > 0) {
+      const totalDealt = (dmg.phys + dmg.magic + dmg.electric + dmg.fire + dmg.mana) * totalMult;
+      const stolen = Math.min(totalDealt * player.stats.lifesteal, player.maxHp - player.currentHp);
+      if (stolen > 0) {
+        player.currentHp += stolen;
+        events.push({ attackerName: "🩸 Drain", targetName: player.character.name, damage: stolen, damageType: "physical", targetHpAfter: player.currentHp, killed: false });
+      }
+    }
   }
 
   // Enemies attack players — all attack, grid affects targeting, with D20 and flank
@@ -295,7 +380,7 @@ export function resolveRound(
     const rollPrefix = `🎲${roll}${label ? ` ${label}` : ""}${flanking ? " FLANK" : ""} `;
 
     const dmg = calcDamage(enemy.stats, target.stats);
-    const totalDmg = (dmg.phys + dmg.electric + dmg.fire + dmg.mana) * totalMult;
+    const totalDmg = (dmg.phys + dmg.magic + dmg.electric + dmg.fire + dmg.mana) * totalMult;
     target.currentHp = Math.max(0, target.currentHp - totalDmg);
     if (dmg.fire > 0) {
       const fireDmg = dmg.fire * totalMult;
@@ -326,7 +411,7 @@ export function resolveRound(
 export function generateEnemies(
   allCharacters: NftCharacter[],
   playerCount: number,
-  aiStrength: number,
+  _aiStrength: number,
   aiDeckBias: string,
   npcAddress?: string,
   npcAddresses?: string[],
@@ -338,7 +423,7 @@ export function generateEnemies(
     npcAddresses.forEach((addr, i) => {
       const npc = allCharacters.find(c => c.contractAddress.toLowerCase() === addr.toLowerCase());
       if (npc) {
-        const unit = makeUnit(npc, false, i, aiStrength);
+        const unit = makeUnit(npc, false, i);
         unit.gridPos = i < 9 ? positions[i] : -1; // reserves off-grid
         units.push(unit);
       }
@@ -350,7 +435,7 @@ export function generateEnemies(
   if (npcAddress) {
     const npc = allCharacters.find(c => c.contractAddress.toLowerCase() === npcAddress.toLowerCase());
     if (npc) {
-      const unit = makeUnit(npc, false, 0, aiStrength);
+      const unit = makeUnit(npc, false, 0);
       unit.gridPos = 1; // front-center
       return [unit];
     }
@@ -359,19 +444,21 @@ export function generateEnemies(
   // Fixed enemy count — not scaled by player count (encourages owning more/stronger NFTs)
   const enemyCount = Math.max(1, Math.min(5, Math.ceil(allCharacters.length * 0.03)));
 
-  let pool = [...allCharacters];
-  if (aiDeckBias === "aggressive") {
-    pool.sort((a, b) => (b.stats.attack + b.stats.mAtk + b.stats.fAtk) - (a.stats.attack + a.stats.mAtk + a.stats.fAtk));
-  } else if (aiDeckBias === "defensive") {
-    pool.sort((a, b) => (b.stats.def + b.stats.mDef + b.stats.hp) - (a.stats.def + a.stats.mDef + a.stats.hp));
-  } else if (aiDeckBias === "magic") {
-    pool.sort((a, b) => (b.stats.mAtk + b.stats.mana) - (a.stats.mAtk + a.stats.mana));
+  // Limit pool to 20 weakest NFTs (sorted by total stats ascending)
+  const totalStats = (c: typeof allCharacters[0]) =>
+    c.stats.hp + c.stats.attack + c.stats.def + c.stats.mAtk + c.stats.mDef + c.stats.fAtk + c.stats.mana;
+  let pool = [...allCharacters].sort((a, b) => totalStats(a) - totalStats(b)).slice(0, 20);
+
+  // Shuffle and pick enemyCount from the weak pool
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
   }
 
   // Place enemies on grid: fill front row first, then mid
   const enemyPositions = [1, 0, 2, 4, 3, 5, 7, 6, 8]; // center-first placement
   return pool.slice(0, enemyCount).map((char, i) => {
-    const unit = makeUnit(char, false, i, aiStrength);
+    const unit = makeUnit(char, false, i);
     unit.gridPos = enemyPositions[i] ?? i;
     return unit;
   });

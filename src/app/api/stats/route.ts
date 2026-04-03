@@ -175,15 +175,28 @@ export async function GET() {
     const QUATERNARY_PER_DOLLAR = 10; // $0.10 = 1 quaternary stat point
 
     // Secondary + tertiary + quaternary stats for the 8 game tokens (HP is primary)
+    // Secondary/tertiary/quaternary are always from the 4 main stats (ATK, DEF, MATK, MDEF)
     const bonusStats: Record<string, { secondary: string; tertiary: string; quaternary: string }> = {
       "0x4bf82cf0d6b2afc87367052b793097153c859d38": { secondary: "def",    tertiary: "attack", quaternary: "mDef" },   // DDD
-      "0x64f6f111e9fdb753877f17f399b759de97379170": { secondary: "healing", tertiary: "mDef",   quaternary: "mAtk" },   // EGP(POL)
+      "0x64f6f111e9fdb753877f17f399b759de97379170": { secondary: "mDef",   tertiary: "mAtk",   quaternary: "def" },    // EGP(POL)
       "0xccf37622e6b72352e7b410481dd4913563038b7c": { secondary: "attack", tertiary: "mAtk",   quaternary: "mDef" },   // OGC
-      "0x8a088dceecbcf457762eb7c66f78fff27dc0c04a": { secondary: "attack", tertiary: "mAtk",   quaternary: "def" },    // PKT
-      "0xd7c584d40216576f1d8651eab8bef9de69497666": { secondary: "mAtk",   tertiary: "healing", quaternary: "def" },    // BTN
-      "0xe302672798d12e7f68c783db2c2d5e6b48ccf3ce": { secondary: "mDef",   tertiary: "attack", quaternary: "mAtk" },   // IGS
-      "0x75c0a194cd8b4f01d5ed58be5b7c5b61a9c69d0a": { secondary: "mAtk",  tertiary: "mDef",   quaternary: "def" },    // DHG
-      "0xddc330761761751e005333208889bfe36c6e6760": { secondary: "def",    tertiary: "mDef",   quaternary: "attack" }, // LGP
+      "0x8a088dceecbcf457762eb7c66f78fff27dc0c04a": { secondary: "attack", tertiary: "def",    quaternary: "mAtk" },   // PKT
+      "0xd7c584d40216576f1d8651eab8bef9de69497666": { secondary: "mAtk",   tertiary: "def",    quaternary: "mDef" },   // BTN
+      "0xe302672798d12e7f68c783db2c2d5e6b48ccf3ce": { secondary: "mAtk",   tertiary: "mDef",   quaternary: "attack" }, // IGS
+      "0x75c0a194cd8b4f01d5ed58be5b7c5b61a9c69d0a": { secondary: "mAtk",   tertiary: "mDef",   quaternary: "def" },    // DHG
+      "0xddc330761761751e005333208889bfe36c6e6760": { secondary: "def",    tertiary: "mDef",   quaternary: "def" },    // LGP
+    };
+
+    // Passive abilities — applied separately at the same rate as primary HP
+    const passiveAbilities: Record<string, string> = {
+      "0x4bf82cf0d6b2afc87367052b793097153c859d38": "rally",        // DDD
+      "0x64f6f111e9fdb753877f17f399b759de97379170": "healing",      // EGP(POL)
+      "0xd7c584d40216576f1d8651eab8bef9de69497666": "healing",      // BTN
+      "0xccf37622e6b72352e7b410481dd4913563038b7c": "lifesteal",    // OGC
+      "0x8a088dceecbcf457762eb7c66f78fff27dc0c04a": "armorPierce",  // PKT
+      "0x75c0a194cd8b4f01d5ed58be5b7c5b61a9c69d0a": "aoeDamage",    // DHG
+      "0xe302672798d12e7f68c783db2c2d5e6b48ccf3ce": "magicShield",  // IGS
+      "0xddc330761761751e005333208889bfe36c6e6760": "shieldWall",   // LGP
     };
 
     // Multipliers keep original scaling (not USD-based — they multiply other stats)
@@ -216,6 +229,7 @@ export async function GET() {
     const magicTokens = STAT_TOKENS.base.magic.map(t => t.toLowerCase());
     const polyAttackTokens = STAT_TOKENS.polygon.attack.map(t => t.toLowerCase());
     const polyMatkTokens = STAT_TOKENS.polygon.mAtk.map(t => t.toLowerCase());
+    const polyEatkTokens = STAT_TOKENS.polygon.eAtk.map(t => t.toLowerCase());
     const polyFatkTokens = STAT_TOKENS.polygon.fAtk.map(t => t.toLowerCase());
     const polyHpTokens = STAT_TOKENS.polygon.hp.map(t => t.toLowerCase());
     const polyMagicTokens = STAT_TOKENS.polygon.magic.map(t => t.toLowerCase());
@@ -478,6 +492,7 @@ export async function GET() {
           let recognized = false;
           if (polyAttackTokens.includes(token)) { recognized = true; }
           if (polyMatkTokens.includes(token)) { recognized = true; }
+          if (polyEatkTokens.includes(token)) { recognized = true; }
           if (polyFatkTokens.includes(token)) { recognized = true; }
           if (polyDefTokens.includes(token)) { recognized = true; }
           if (polyMDefTokens.includes(token)) { recognized = true; }
@@ -490,8 +505,8 @@ export async function GET() {
       });
 
       // Compute final stats: $0.01 = 1 stat point for ALL tokens
-      let attack = 0, mAtk = 0, fAtk = 0, def = 0, mDef = 0;
-      let hp = 0, healing = 0, charMultiplier = 0, magicBoost = 0, mana = 0;
+      let attack = 0, mAtk = 0, eAtk = 0, fAtk = 0, def = 0, mDef = 0;
+      let hp = 0, healing = 0, armorPierce = 0, shieldWall = 0, magicShield = 0, lifesteal = 0, aoeDamage = 0, rally = 0, charMultiplier = 0, magicBoost = 0, mana = 0;
 
       const tokenAmounts: { symbol: string; amount: number; stat: string; addr?: string }[] = [];
 
@@ -518,6 +533,8 @@ export async function GET() {
           stat = "attack"; attack += points;
         } else if (polyMatkTokens.includes(addr)) {
           stat = "mAtk"; mAtk += points;
+        } else if (polyEatkTokens.includes(addr)) {
+          stat = "eAtk"; eAtk += points;
         } else if (polyFatkTokens.includes(addr)) {
           stat = "fAtk"; fAtk += points;
         } else if (magicTokens.includes(addr) || polyMagicTokens.includes(addr)) {
@@ -540,26 +557,37 @@ export async function GET() {
 
         tokenAmounts.push({ symbol: TOKEN_SYMBOLS[addr] ?? addr.slice(0, 8), amount: rawAmount, stat, addr });
 
+        const applyStat = (s: string, pts: number) => {
+          if (s === "attack") attack += pts;
+          else if (s === "mAtk") mAtk += pts;
+          else if (s === "eAtk") eAtk += pts;
+          else if (s === "fAtk") fAtk += pts;
+          else if (s === "def") def += pts;
+          else if (s === "mDef") mDef += pts;
+          else if (s === "hp") hp += pts;
+          else if (s === "healing") healing += pts;
+          else if (s === "armorPierce") armorPierce += pts;
+          else if (s === "shieldWall") shieldWall += pts;
+          else if (s === "magicShield") magicShield += pts;
+          else if (s === "lifesteal") lifesteal += pts;
+          else if (s === "aoeDamage") aoeDamage += pts;
+          else if (s === "rally") rally += pts;
+          else if (s === "mana") mana += pts;
+        };
+
         // Bonus stats for game tokens (secondary at $0.02/pt, tertiary at $0.05/pt)
         const bonus = bonusStats[addr];
         if (bonus && usdPrice > 0) {
           const usdVal = rawAmount * usdPrice;
-          const sec = usdVal * SECONDARY_PER_DOLLAR;
-          const ter = usdVal * TERTIARY_PER_DOLLAR;
-          const applyBonus = (s: string, pts: number) => {
-            if (s === "attack") attack += pts;
-            else if (s === "mAtk") mAtk += pts;
-            else if (s === "fAtk") fAtk += pts;
-            else if (s === "def") def += pts;
-            else if (s === "mDef") mDef += pts;
-            else if (s === "hp") hp += pts;
-            else if (s === "healing") healing += pts;
-            else if (s === "mana") mana += pts;
-          };
-          const quat = usdVal * QUATERNARY_PER_DOLLAR;
-          applyBonus(bonus.secondary, sec);
-          applyBonus(bonus.tertiary, ter);
-          applyBonus(bonus.quaternary, quat);
+          applyStat(bonus.secondary, usdVal * SECONDARY_PER_DOLLAR);
+          applyStat(bonus.tertiary, usdVal * TERTIARY_PER_DOLLAR);
+          applyStat(bonus.quaternary, usdVal * QUATERNARY_PER_DOLLAR);
+        }
+
+        // Passive abilities — applied at primary rate (same as HP)
+        const passive = passiveAbilities[addr];
+        if (passive && usdPrice > 0) {
+          applyStat(passive, rawAmount * usdPrice * POINTS_PER_DOLLAR);
         }
       }
 
@@ -570,11 +598,18 @@ export async function GET() {
         stats: {
           attack,
           mAtk,
+          eAtk,
           fAtk,
           def,
           mDef,
           hp,
           healing,
+          armorPierce,
+          shieldWall,
+          magicShield,
+          lifesteal,
+          aoeDamage,
+          rally,
           charMultiplier,
           magicMultiplier: magicBoost,
           mana,

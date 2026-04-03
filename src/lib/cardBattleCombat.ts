@@ -5,17 +5,20 @@ const SUPPORT_BONUS = 0.2;
 const FIRE_DOT_TURNS = 2; // fire burns for 2 additional turns after initial hit
 
 function calcDamage(attacker: ComputedStats, defender: ComputedStats): {
-  phys: number; magic: number; fire: number; mana: number;
+  phys: number; magic: number; electric: number; fire: number; mana: number;
 } {
-  const attackerHasSpecial = attacker.mAtk > 0 || attacker.fAtk > 0;
-  const defenderHasSpecial = defender.mAtk > 0 || defender.fAtk > 0;
-
-  const effectiveMDef = defenderHasSpecial ? defender.mDef : defender.mDef + defender.mana;
-  const physArmor = defenderHasSpecial ? defender.def : defender.def + effectiveMDef * 0.5;
+  const attackerHasSpecial = attacker.mAtk > 0 || attacker.eAtk > 0 || attacker.fAtk > 0;
+  const defenderHasSpecial = defender.mAtk > 0 || defender.eAtk > 0 || defender.fAtk > 0;
+  // Armor piercing reduces effective defense (PKT passive)
+  const pierce = attacker.armorPierce;
+  const effectiveDef = defender.def * (1 - pierce);
+  const effectiveMDef = (defenderHasSpecial ? defender.mDef : defender.mDef + defender.mana) * (1 - pierce);
+  const physArmor = defenderHasSpecial ? effectiveDef : effectiveDef + effectiveMDef * 0.5;
 
   const phys = attacker.attack * (100 / (100 + physArmor));
   const magic = attacker.mAtk * (100 / (100 + effectiveMDef));
-  const fire = attacker.fAtk * (100 / (100 + defender.def));
+  const electric = attacker.eAtk * (100 / (100 + effectiveMDef));
+  const fire = attacker.fAtk * (100 / (100 + effectiveDef));
   const mana = attackerHasSpecial && attacker.mana > 0
     ? attacker.mana * (100 / (100 + effectiveMDef))
     : 0;
@@ -23,6 +26,7 @@ function calcDamage(attacker: ComputedStats, defender: ComputedStats): {
   return {
     phys: Math.max(phys, 0.5),
     magic: Math.max(magic, 0),
+    electric: Math.max(electric, 0),
     fire: Math.max(fire, 0),
     mana: Math.max(mana, 0),
   };
@@ -30,8 +34,8 @@ function calcDamage(attacker: ComputedStats, defender: ComputedStats): {
 
 // Fortress takes raw damage — all types hit it
 function calcFortressDamage(attacker: ComputedStats): number {
-  const attackerHasSpecial = attacker.mAtk > 0 || attacker.fAtk > 0;
-  return attacker.attack + attacker.mAtk + attacker.fAtk +
+  const attackerHasSpecial = attacker.mAtk > 0 || attacker.eAtk > 0 || attacker.fAtk > 0;
+  return attacker.attack + attacker.mAtk + attacker.eAtk + attacker.fAtk +
     (attackerHasSpecial ? attacker.mana : 0);
 }
 
@@ -58,7 +62,7 @@ function applyLightningSplash(
   attackerPlayer: 1 | 2,
   attackerName: string,
 ) {
-  if (attackerStats.mAtk <= 0) return;
+  if (attackerStats.eAtk <= 0) return;
 
   for (const adjCol of [col - 1, col + 1]) {
     if (adjCol < 0 || adjCol >= 5) continue;
@@ -70,9 +74,9 @@ function applyLightningSplash(
     const adjDefender = adjFront
       ? getEffectiveStats(adjFront, adjBack)
       : adjTarget.stats;
-    const defenderHasSpecial = adjDefender.mAtk > 0 || adjDefender.fAtk > 0;
+    const defenderHasSpecial = adjDefender.mAtk > 0 || adjDefender.eAtk > 0 || adjDefender.fAtk > 0;
     const effectiveMDef = defenderHasSpecial ? adjDefender.mDef : adjDefender.mDef + adjDefender.mana;
-    const splashDmg = attackerStats.mAtk * (100 / (100 + effectiveMDef));
+    const splashDmg = attackerStats.eAtk * (100 / (100 + effectiveMDef));
 
     if (splashDmg > 0) {
       const targetKey = adjFront ? `${adjCol}-1` : `${adjCol}-0`;

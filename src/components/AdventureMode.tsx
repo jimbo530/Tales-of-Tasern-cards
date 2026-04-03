@@ -4,10 +4,13 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useAccount, useWalletClient } from "wagmi";
 import { useAdventure } from "@/hooks/useAdventure";
 import { useNftImage } from "@/hooks/useNftImage";
+import { ADVENTURE_CHAPTERS } from "@/lib/adventureData";
 import type { NftCharacter } from "@/hooks/useNftStats";
 import { makeUnit, resolveRound, generateEnemies, getValidMoves, canAttack, gridRow, gridCol, type CombatUnit, type CombatEvent } from "@/lib/adventureCombat";
 
-const ADMIN_WALLET = "0x0780b1456d5e60cf26c8cd6541b85e805c8c05f2";
+const ADMIN_WALLETS: string[] = [
+  "0x0780b1456d5e60cf26c8cd6541b85e805c8c05f2",
+];
 // LP Faucet — owner-funded, players pay only gas
 const LP_FAUCET = "0xCDfeE3a76710438afCEfC448E687cC27e464089E" as const;
 const FAUCET_ABI = [{ name: "rewardHero", type: "function", stateMutability: "nonpayable", inputs: [{ name: "nftContract", type: "address" }], outputs: [] }, { name: "canReward", type: "function", stateMutability: "view", inputs: [{ name: "nftContract", type: "address" }], outputs: [{ type: "bool" }] }] as const;
@@ -343,12 +346,13 @@ function PartyCombat({ players: initPlayers, enemies: initEnemies, onWin, onLose
 
 const FORMATION_LABELS = ["Front-L", "Front-C", "Front-R", "Mid-L", "Mid-C", "Mid-R", "Back-L", "Back-C", "Back-R"];
 
-function PartyPicker({ characters, onStart, onBack, isAdmin, unlockedNpcs }: {
+function PartyPicker({ characters, onStart, onBack, isAdmin, unlockedNpcs, maxParty = 9 }: {
   characters: NftCharacter[];
   onStart: (party: NftCharacter[], gridMap: Map<string, number>) => void;
   onBack: () => void;
   isAdmin?: boolean;
   unlockedNpcs?: string[];
+  maxParty?: number;
 }) {
   // 9 formation slots (3x3 grid)
   const [slots, setSlots] = useState<(NftCharacter | null)[]>(Array(9).fill(null));
@@ -375,9 +379,9 @@ function PartyPicker({ characters, onStart, onBack, isAdmin, unlockedNpcs }: {
       for (let i = 0; i < next.length; i++) {
         if (next[i]?.contractAddress === card.contractAddress) next[i] = null;
       }
-      // Check if already at max (4) and this is a new hero
+      // Check if already at max and this is a new hero
       const currentCount = next.filter(Boolean).length;
-      if (currentCount >= 4 && !prev.some(s => s?.contractAddress === card.contractAddress)) return prev;
+      if (currentCount >= maxParty && !prev.some(s => s?.contractAddress === card.contractAddress)) return prev;
       next[selectedSlot] = card;
       return next;
     });
@@ -392,7 +396,7 @@ function PartyPicker({ characters, onStart, onBack, isAdmin, unlockedNpcs }: {
     <div className="flex flex-col items-center gap-4 max-w-2xl mx-auto">
       <h3 className="text-lg font-black tracking-widest text-gold-shimmer uppercase">Formation</h3>
       <p className="text-sm" style={{ color: 'rgba(201,168,76,0.5)' }}>
-        Place up to 4 heroes in a 3×3 grid. Tap a slot, then pick a hero. Front row takes hits first.
+        Place up to {maxParty} hero{maxParty !== 1 ? "es" : ""} in a 3×3 grid. Tap a slot, then pick a hero. Front row takes hits first.
       </p>
       {owned.length === 0 && !isAdmin && (
         <div className="flex flex-col items-center gap-3 py-8">
@@ -523,34 +527,94 @@ const WORLD_NODES = [
 const WORLD_PATH = WORLD_NODES.map(n => n.id);
 const WORLD_LONDA_IDX = WORLD_NODES.findIndex(n => n.id === 'londa');
 
-// Londa regional map — linear path of nodes
-const LONDA_NODES = [
-  { id: 'village', x: 25, y: 60, label: 'The Crossroads Village', type: 'chapter' as const, chapterIdx: 0 },
-  { id: 'goblin', x: 28, y: 60, label: '', type: 'encounter' as const, chapterIdx: 1, encounterIdx: 0 },
-  { id: 'bandits', x: 31, y: 60, label: '', type: 'encounter' as const, chapterIdx: 1, encounterIdx: 1 },
-  { id: 'wolves', x: 34, y: 60, label: '', type: 'encounter' as const, chapterIdx: 1, encounterIdx: 2 },
-  { id: 'newbsberd', x: 38, y: 60, label: 'Newbsberd', type: 'destination' as const },
-  { id: 'south-road', x: 40, y: 68, label: '', type: 'travel' as const },
-  { id: 'southfort', x: 43, y: 76, label: 'Southfort', type: 'destination' as const },
+// Build Londa nodes from adventure data + map editor positions (localStorage)
+type LondaNode = {
+  id: string; x: number; y: number; label: string;
+  type: 'chapter' | 'encounter' | 'travel' | 'destination';
+  chapterIdx?: number; encounterIdx?: number;
+};
+function buildLondaNodes(): LondaNode[] {
+  let editorPins: Record<string, { x: number; y: number }> = {};
+  if (typeof window !== 'undefined') {
+    try {
+      const saved = localStorage.getItem("map-pin-editor-pins");
+      if (saved) {
+        for (const p of JSON.parse(saved) as { id: string; x: number; y: number; region: string }[]) {
+          if (p.region === 'londa') editorPins[p.id] = { x: p.x, y: p.y };
+        }
+      }
+    } catch { /* ignore */ }
+  }
+  const nodes: LondaNode[] = [];
+  ADVENTURE_CHAPTERS.forEach((ch, idx) => {
+    if (ch.mapPin?.region !== 'londa') return;
+    const pos = editorPins[ch.id];
+    const x = pos?.x ?? ch.mapPin.x;
+    const y = pos?.y ?? ch.mapPin.y;
+    const multi = ch.encounters.length > 1;
+    nodes.push({
+      id: ch.id, x, y,
+      label: multi ? ch.title : '',
+      type: multi ? 'chapter' : 'encounter',
+      chapterIdx: idx,
+      ...(multi ? {} : { encounterIdx: 0 }),
+    });
+  });
+  nodes.push({ id: 'south-road', x: editorPins['south-road']?.x ?? 72, y: editorPins['south-road']?.y ?? 45, label: '', type: 'travel' });
+  nodes.push({ id: 'southfort', x: editorPins['southfort']?.x ?? 80, y: editorPins['southfort']?.y ?? 55, label: 'Southfort', type: 'destination' });
+  return nodes;
+}
+
+// Edge-based adjacency for branching paths on the Londa map
+// Each pair [a, b] means a↔b (bidirectional movement)
+const LONDA_EDGES: [string, string][] = [
+  ['leaving-home', 'path-1'],
+  ['path-1', 'path-2'],
+  ['path-2', 'path-3'],
+  ['path-3', 'newbsberd'],
+  ['newbsberd', 'or'],          // branch: Ork Road → Orkville
+  ['newbsberd', 'nr'],          // branch: North Road → Wickleberry Estate
+  ['or', 'closed-gates'],       // completing either branch opens the gate
+  ['nr', 'closed-gates'],
+  ['newbsberd', 'south-road'],
+  ['south-road', 'southfort'],
 ];
-const LONDA_PATH = LONDA_NODES.map(n => n.id);
+function buildAdjacency(): Record<string, string[]> {
+  const adj: Record<string, string[]> = {};
+  for (const [a, b] of LONDA_EDGES) {
+    if (!adj[a]) adj[a] = [];
+    if (!adj[b]) adj[b] = [];
+    adj[a].push(b);
+    adj[b].push(a);
+  }
+  return adj;
+}
+const LONDA_ADJ = buildAdjacency();
 
 // Per-chapter encounter positions on local maps
 const CHAPTER_NODE_MAP: Record<number, { x: number; y: number; label: string }[]> = {
-  0: [
-    { x: 50, y: 85, label: "1" },  // A Friendly Face — bottom center
-    { x: 18, y: 70, label: "2" },  // The Lost Explorer — bottom-left shack
-    { x: 8,  y: 40, label: "3" },  // Maren's Warning — left shack
-    { x: 20, y: 12, label: "4" },  // Guards of Newbsberd — top-left shack
-    { x: 55, y: 8,  label: "5" },  // The Scout's Challenge — top-right shack
-    { x: 85, y: 35, label: "6" },  // The Elder's Wisdom — right shack
-    { x: 78, y: 68, label: "7" },  // The Village Farewell — bottom-right shack
+  0: [ // Leaving Home — 7 encounters on village map
+    { x: 20, y: 10, label: "1" },
+    { x: 68, y: 8,  label: "2" },
+    { x: 85, y: 48, label: "3" },
+    { x: 70, y: 82, label: "4" },
+    { x: 18, y: 82, label: "5" },
+    { x: 5,  y: 45, label: "6" },
+    { x: 50, y: 50, label: "7" },
   ],
-  1: [
-    { x: 12, y: 70, label: "1" },  // Goblin Ambush — leaving the village
-    { x: 50, y: 30, label: "2" },  // Highwaymen's Toll — deep in the forest
-    { x: 88, y: 60, label: "3" },  // The Wolf Pack — approaching Newbsberd
+  1: [{ x: 50, y: 50, label: "1" }],  // path-1 Goblin Ambush
+  2: [{ x: 50, y: 50, label: "1" }],  // path-2 The Wolf Pack
+  3: [{ x: 50, y: 50, label: "1" }],  // path-3 Lost in the Weeds
+  4: [ // Newbsberd — 5 encounters on city map
+    { x: 12, y: 85, label: "1" },
+    { x: 28, y: 68, label: "2" },
+    { x: 45, y: 50, label: "3" },
+    { x: 60, y: 35, label: "4" },
+    { x: 78, y: 22, label: "5" },
   ],
+  5: [{ x: 50, y: 50, label: "1" }],  // closed-gates
+  6: [{ x: 50, y: 50, label: "1" }],  // or — Ork Road
+  7: [{ x: 50, y: 50, label: "1" }],  // nr — North Road
 };
 
 const INTRO_TEXT = "At the heart of a quiet crossroads village, where warm lanternlight spills across worn cobblestones and every path seems to lead somewhere important, your journey begins. Six humble homes ring the central well\u2014each belonging to a friend who has walked a different road, learned a different truth, and now waits to share what they know. Here, among creaking wood, soft laughter, and the scent of earth and fire, you will gather the pieces of what you need\u2014not just tools or directions, but perspective. For beyond this circle, the world grows wider, stranger, and far less forgiving\u2014and only by listening to those who know you best will you be ready to take your first real step into it.";
@@ -559,13 +623,15 @@ export function AdventureMode({ characters, onExit, onStatsRefresh }: Props) {
   const { address } = useAccount();
   const { data: walletClient } = useWalletClient();
   const { state, loaded, introSeen, chapter, encounter, chapters, markIntroSeen, startChapter, startEncounter, startBattle, winBattle, loseBattle, nextEncounter, backToMap, resetAdventure, skipLevel, skipEncounter, isOnCooldown, cooldownRemaining, encounterOnCooldown, encounterCooldownRemaining, setMapPosition, addItem, removeItem, hasItem, currentWeight } = useAdventure(address);
+  // Londa nodes built from adventure data + map editor localStorage positions
+  const [londaNodes] = useState<LondaNode[]>(buildLondaNodes);
   const [, forceUpdate] = useState(0);
   // Tick timer every second for live countdown
   useEffect(() => {
     const t = setInterval(() => forceUpdate(n => n + 1), 1000);
     return () => clearInterval(t);
   }, []);
-  const isAdmin = address?.toLowerCase() === ADMIN_WALLET;
+  const isAdmin = ADMIN_WALLETS.includes(address?.toLowerCase() ?? "");
   const [party, setParty] = useState<NftCharacter[]>([]);
   const [partyGrid, setPartyGrid] = useState<Map<string, number>>(new Map());
   const [pickingParty, setPickingParty] = useState(false);
@@ -647,7 +713,7 @@ export function AdventureMode({ characters, onExit, onStatsRefresh }: Props) {
   function openLondaCentered() {
     setRegionMap("londa");
     setRegionZoom(1);
-    const node = LONDA_NODES.find(n => n.id === partyPosRef.current);
+    const node = londaNodes.find(n => n.id === partyPosRef.current);
     if (node) {
       const vmin = Math.min(window.innerWidth, window.innerHeight);
       const mapSize = vmin * 0.9;
@@ -672,7 +738,7 @@ export function AdventureMode({ characters, onExit, onStatsRefresh }: Props) {
   stateRef.current = state;
 
   // Londa map movement
-  const partyPos = state.mapPosition ?? "village";
+  const partyPos = state.mapPosition ?? (londaNodes[0]?.id ?? "leaving-home");
   const partyPosRef = useRef(partyPos);
   partyPosRef.current = partyPos;
 
@@ -699,19 +765,14 @@ export function AdventureMode({ characters, onExit, onStatsRefresh }: Props) {
   );
 
   function getAdjacentNodes(nodeId: string): string[] {
-    const idx = LONDA_PATH.indexOf(nodeId);
-    if (idx === -1) return [];
-    const adj: string[] = [];
-    if (idx > 0) adj.push(LONDA_PATH[idx - 1]);
-    if (idx < LONDA_PATH.length - 1) adj.push(LONDA_PATH[idx + 1]);
-    return adj;
+    return LONDA_ADJ[nodeId] ?? [];
   }
 
   function moveToNode(targetId: string) {
     const adj = getAdjacentNodes(partyPosRef.current);
     if (!adj.includes(targetId)) return;
     setMapPosition(targetId);
-    const node = LONDA_NODES.find(n => n.id === targetId);
+    const node = londaNodes.find(n => n.id === targetId);
     if (!node) return;
     // Landing on uncleared encounter → start fight
     if (node.type === 'encounter' && node.chapterIdx !== undefined && node.encounterIdx !== undefined) {
@@ -773,38 +834,41 @@ export function AdventureMode({ characters, onExit, onStatsRefresh }: Props) {
         return;
       }
 
-      // === LAYER 2: Londa regional map — follow LONDA_PATH ===
+      // === LAYER 2: Londa regional map — edge-based movement ===
       if (regionMapRef.current === "londa") {
-        const idx = LONDA_PATH.indexOf(partyPosRef.current);
-        if (idx === -1) return;
+        const curNode = londaNodes.find(n => n.id === partyPosRef.current);
+        if (!curNode) return;
+        const curIdx = londaNodes.indexOf(curNode);
 
         if (isEnter) {
-          const node = LONDA_NODES[idx];
-          if (node.type === 'chapter' && node.chapterIdx !== undefined) {
-            // Open village local map, start at first unbeaten encounter
-            const ch = chapters[node.chapterIdx];
-            if (ch) {
+          if (curNode.type === 'chapter' && curNode.chapterIdx !== undefined) {
+            const ch = chapters[curNode.chapterIdx];
+            if (ch && isChapterUnlocked(ch)) {
               const encCooldowns = stateRef.current.encounterCooldowns ?? {};
               const beaten = ch.encounters.map((_, i) => !!encCooldowns[`${ch.id}-${i}`]);
               const nextIdx = beaten.indexOf(false);
-              const nodeCount = (CHAPTER_NODE_MAP[node.chapterIdx] ?? []).length;
+              const nodeCount = (CHAPTER_NODE_MAP[curNode.chapterIdx] ?? []).length;
               const maxIdx = Math.min(nodeCount, ch.encounters.length) - 1;
               setVillageNodeIdx(nextIdx === -1 ? 0 : Math.min(nextIdx, maxIdx));
             }
-            setChapterSelect(node.chapterIdx);
-          } else if (node.type === 'encounter' && node.chapterIdx !== undefined && node.encounterIdx !== undefined) {
-            const ch = chapters[node.chapterIdx];
-            if (ch && !encounterOnCooldown(ch.id, node.encounterIdx)) {
-              startEncounter(node.chapterIdx, node.encounterIdx);
+            setChapterSelect(curNode.chapterIdx);
+          } else if (curNode.type === 'encounter' && curNode.chapterIdx !== undefined && curNode.encounterIdx !== undefined) {
+            const ch = chapters[curNode.chapterIdx];
+            if (ch && !encounterOnCooldown(ch.id, curNode.encounterIdx)) {
+              startEncounter(curNode.chapterIdx, curNode.encounterIdx);
               setPickingParty(true);
             }
           }
           return;
         }
 
-        if (isRight && idx < LONDA_PATH.length - 1) moveToNode(LONDA_PATH[idx + 1]);
-        else if (isLeft && idx > 0) moveToNode(LONDA_PATH[idx - 1]);
-        else if (isLeft && idx === 0) { setRegionMap(null); setWorldNodeIdx(WORLD_LONDA_IDX); }
+        // Move along adjacent nodes — right=forward (higher index), left=backward
+        const adj = LONDA_ADJ[partyPosRef.current] ?? [];
+        const forward = adj.filter(id => { const i = londaNodes.findIndex(n => n.id === id); return i > curIdx; });
+        const backward = adj.filter(id => { const i = londaNodes.findIndex(n => n.id === id); return i >= 0 && i < curIdx; });
+        if (isRight && forward.length > 0) moveToNode(forward[0]);
+        else if (isLeft && backward.length > 0) moveToNode(backward[0]);
+        else if (isLeft && backward.length === 0) { setRegionMap(null); setWorldNodeIdx(WORLD_LONDA_IDX); }
         return;
       }
 
@@ -864,8 +928,15 @@ export function AdventureMode({ characters, onExit, onStatsRefresh }: Props) {
     setTimeout(() => setLpStatus(null), 5000);
   }
 
-  // Find current player position (first incomplete level)
-  const playerLevel = chapters.findIndex(ch => !state.completedChapters.includes(ch.id));
+  // Check if a chapter is unlocked
+  const isChapterUnlocked = (ch: typeof chapters[number]) => {
+    const andOk = !ch.requires || ch.requires.length === 0 || ch.requires.every(reqId => state.completedChapters.includes(reqId));
+    const anyOk = !ch.requiresAny || ch.requiresAny.length === 0 || ch.requiresAny.some(reqId => state.completedChapters.includes(reqId));
+    return andOk && anyOk;
+  };
+
+  // Find current player position (first incomplete unlocked level)
+  const playerLevel = chapters.findIndex(ch => isChapterUnlocked(ch) && !state.completedChapters.includes(ch.id));
   const playerPos = playerLevel === -1 ? chapters.length : playerLevel;
 
   const floatingBack = (
@@ -1289,22 +1360,22 @@ export function AdventureMode({ characters, onExit, onStatsRefresh }: Props) {
                 backgroundPosition: 'center',
               }}>
 
-                {/* Road path connecting all nodes */}
+                {/* Road paths connecting adjacent nodes */}
                 <svg className="absolute inset-0 w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none" style={{ pointerEvents: 'none' }}>
-                  {LONDA_NODES.map((node, i) => {
-                    if (i >= LONDA_NODES.length - 1) return null;
-                    const next = LONDA_NODES[i + 1];
-                    return <line key={i} x1={node.x} y1={node.y} x2={next.x} y2={next.y}
+                  {LONDA_EDGES.map(([aId, bId], i) => {
+                    const a = londaNodes.find(n => n.id === aId);
+                    const b = londaNodes.find(n => n.id === bId);
+                    if (!a || !b) return null;
+                    return <line key={i} x1={a.x} y1={a.y} x2={b.x} y2={b.y}
                       stroke="rgba(139,119,79,0.4)" strokeWidth="0.5" strokeDasharray="1 0.5" strokeLinecap="round" />;
                   })}
                 </svg>
 
                 {/* All map nodes */}
-                {LONDA_NODES.map((node) => {
+                {londaNodes.map((node) => {
                   const isHere = partyPos === node.id;
                   const adjacent = getAdjacentNodes(partyPos);
                   const isAdj = adjacent.includes(node.id);
-                  const roadCh = chapters[1];
 
                   // Node appearance by type
                   let bg = 'rgba(100,100,100,0.6)';
@@ -1316,19 +1387,33 @@ export function AdventureMode({ characters, onExit, onStatsRefresh }: Props) {
                   let size = 20;
 
                   if (node.type === 'chapter') {
-                    bg = 'rgba(201,168,76,0.9)'; border = '#f0d070'; textColor = '#f0d070';
-                    icon = '1'; size = 22;
-                  } else if (node.type === 'encounter' && roadCh) {
-                    const cleared = encounterOnCooldown(roadCh.id, node.encounterIdx!);
-                    const cdMs = encounterCooldownRemaining(roadCh.id, node.encounterIdx!);
-                    const cdD = Math.floor(cdMs / 86400000);
-                    const cdH = Math.floor((cdMs % 86400000) / 3600000);
-                    if (cleared) {
-                      bg = 'rgba(34,197,94,0.8)'; border = '#4ade80'; textColor = 'rgba(74,222,128,0.7)';
-                      icon = '✓'; subtitle = `Resets ${cdD}d ${cdH}h`;
+                    const ch = node.chapterIdx !== undefined ? chapters[node.chapterIdx] : undefined;
+                    const unlocked = ch ? isChapterUnlocked(ch) : false;
+                    const completed = ch ? state.completedChapters.includes(ch.id) : false;
+                    if (completed) {
+                      bg = 'rgba(34,197,94,0.8)'; border = '#4ade80'; textColor = '#4ade80';
+                      icon = '✓'; size = 22;
+                    } else if (unlocked) {
+                      bg = 'rgba(201,168,76,0.9)'; border = '#f0d070'; textColor = '#f0d070';
+                      icon = '⚔'; size = 22; pulse = !isHere;
                     } else {
-                      bg = 'rgba(220,38,38,0.8)'; border = '#f87171'; textColor = 'rgba(248,113,113,0.8)';
-                      icon = '⚔'; pulse = !isHere;
+                      bg = 'rgba(60,60,60,0.7)'; border = 'rgba(100,100,100,0.5)'; textColor = 'rgba(100,100,100,0.5)';
+                      icon = '🔒'; size = 22;
+                    }
+                  } else if (node.type === 'encounter' && node.chapterIdx !== undefined) {
+                    const encCh = chapters[node.chapterIdx];
+                    if (encCh) {
+                      const cleared = encounterOnCooldown(encCh.id, node.encounterIdx!);
+                      const cdMs = encounterCooldownRemaining(encCh.id, node.encounterIdx!);
+                      const cdD = Math.floor(cdMs / 86400000);
+                      const cdH = Math.floor((cdMs % 86400000) / 3600000);
+                      if (cleared) {
+                        bg = 'rgba(34,197,94,0.8)'; border = '#4ade80'; textColor = 'rgba(74,222,128,0.7)';
+                        icon = '✓'; subtitle = `Resets ${cdD}d ${cdH}h`;
+                      } else {
+                        bg = 'rgba(220,38,38,0.8)'; border = '#f87171'; textColor = 'rgba(248,113,113,0.8)';
+                        icon = '⚔'; pulse = !isHere;
+                      }
                     }
                     size = 12;
                   } else if (node.type === 'travel') {
@@ -1348,10 +1433,19 @@ export function AdventureMode({ characters, onExit, onStatsRefresh }: Props) {
                       <button onClick={(e) => {
                           e.stopPropagation();
                           if (isHere) {
-                            // Already here — if chapter node, open its local map (keep regionMap so back returns here)
                             if (node.type === 'chapter' && node.chapterIdx !== undefined) {
-                              setChapterSelect(node.chapterIdx);
-                              setRegionZoom(1); setRegionPos({ x: 0, y: 0 });
+                              const ch = chapters[node.chapterIdx];
+                              if (ch && isChapterUnlocked(ch)) {
+                                setChapterSelect(node.chapterIdx);
+                                setRegionZoom(1); setRegionPos({ x: 0, y: 0 });
+                              }
+                            } else if (node.type === 'encounter' && node.chapterIdx !== undefined && node.encounterIdx !== undefined) {
+                              const ch = chapters[node.chapterIdx];
+                              if (ch && !encounterOnCooldown(ch.id, node.encounterIdx)) {
+                                startEncounter(node.chapterIdx, node.encounterIdx);
+                                setRegionMap(null);
+                                setPickingParty(true);
+                              }
                             }
                             return;
                           }
@@ -1366,7 +1460,7 @@ export function AdventureMode({ characters, onExit, onStatsRefresh }: Props) {
                           background: bg,
                           border: `${isAdj ? '3px' : '2px'} solid ${isAdj ? '#f0d070' : border}`,
                           boxShadow: adjGlow,
-                          cursor: isAdj || (isHere && node.type === 'chapter') ? 'pointer' : 'default',
+                          cursor: isAdj || (isHere && (node.type === 'chapter' || node.type === 'encounter')) ? 'pointer' : 'default',
                           display: 'flex', alignItems: 'center', justifyContent: 'center',
                           fontSize: '0.35rem', fontWeight: 900,
                           color: node.type === 'chapter' ? '#0a0608' : '#fff',
@@ -1405,7 +1499,7 @@ export function AdventureMode({ characters, onExit, onStatsRefresh }: Props) {
 
                 {/* Party token — shows current position */}
                 {(() => {
-                  const partyNode = LONDA_NODES.find(n => n.id === partyPos);
+                  const partyNode = londaNodes.find(n => n.id === partyPos);
                   if (!partyNode) return null;
                   return partyToken(partyNode.x, partyNode.y - 4);
                 })()}
@@ -1449,6 +1543,7 @@ export function AdventureMode({ characters, onExit, onStatsRefresh }: Props) {
   if (pickingParty) {
     return (
       <PartyPicker characters={characters} isAdmin={isAdmin} unlockedNpcs={state.unlockedNpcs}
+        maxParty={chapter?.maxParty ?? 9}
         onStart={(p, gridMap) => { setParty(p); setPartyGrid(gridMap); setPickingParty(false); }}
         onBack={() => { setPickingParty(false); backToMap(); }}
       />
@@ -1589,7 +1684,7 @@ export function AdventureMode({ characters, onExit, onStatsRefresh }: Props) {
         enemies={enemyUnits}
         onWin={() => {
           // Check if NPC joins party
-          if (encounter.joinsParty && party.length < 4) {
+          if (encounter.joinsParty && party.length < (chapter?.maxParty ?? 9)) {
             const npc = characters.find(c => c.contractAddress.toLowerCase() === encounter.joinsParty!.toLowerCase());
             if (npc && !party.some(p => p.contractAddress.toLowerCase() === npc.contractAddress.toLowerCase())) {
               setParty(prev => [...prev, npc]);

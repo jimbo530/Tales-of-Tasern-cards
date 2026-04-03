@@ -14,7 +14,8 @@ type Props = {
 
 const STAT_META: Record<string, { label: string; color: string }> = {
   attack:         { label: "⚔️ ATK",   color: "rgba(251,191,36,0.9)"  },
-  mAtk:           { label: "⚡ EATK",  color: "rgba(250,204,21,0.9)"  },
+  mAtk:           { label: "🔮 MATK",  color: "rgba(167,139,250,0.9)" },
+  eAtk:           { label: "⚡ EATK",  color: "rgba(250,204,21,0.9)"  },
   fAtk:           { label: "🔥 FATK",  color: "rgba(251,146,60,0.9)"  },
   def:            { label: "🛡️ DEF",  color: "rgba(148,163,184,0.9)" },
   mDef:           { label: "🛡️ MDEF", color: "rgba(45,212,191,0.9)"  },
@@ -85,11 +86,12 @@ export function CharacterCard({ character, maxStats, selectable, selected, onSel
   const magicMult = 1 + stats.magicMultiplier;
   const attack = stats.attack * multiplier;
   const mAtk = stats.mAtk * multiplier * magicMult;
+  const eAtk = (stats.eAtk ?? 0) * multiplier * magicMult;
   const fAtk = stats.fAtk * multiplier;
   const def = stats.def * multiplier;
   const hp = stats.hp * multiplier;
   const mana = stats.mana * multiplier;
-  const hasSpecial = mAtk > 0 || fAtk > 0;
+  const hasSpecial = mAtk > 0 || eAtk > 0 || fAtk > 0;
   // Mana folds into MDEF if no special, otherwise it's an offensive stat shown in battle only
   const mDef = (stats.mDef * multiplier * magicMult) + (hasSpecial ? 0 : mana);
 
@@ -252,7 +254,10 @@ export function CharacterCard({ character, maxStats, selectable, selected, onSel
             )}
             <StatBar label="⚔️ ATK"   value={attack} max={maxStats.attack} color="bg-amber-500" />
             {mAtk > 0 && (
-              <StatBar label="⚡ EATK"  value={mAtk}   max={maxStats.mAtk}   color="bg-purple-500" />
+              <StatBar label="🔮 MATK"  value={mAtk}   max={maxStats.mAtk}   color="bg-purple-500" />
+            )}
+            {eAtk > 0 && (
+              <StatBar label="⚡ EATK"  value={eAtk}   max={maxStats.mAtk}   color="bg-yellow-400" />
             )}
             {fAtk > 0 && (
               <StatBar label="🔥 FATK"  value={fAtk}   max={maxStats.fAtk}   color="bg-orange-500" />
@@ -266,6 +271,24 @@ export function CharacterCard({ character, maxStats, selectable, selected, onSel
             )}
             {stats.healing > 0 && (
               <StatBar label="💚 HEAL"  value={stats.healing * multiplier}  max={maxStats.hp * 0.1}  color="bg-emerald-400" />
+            )}
+            {(stats.armorPierce ?? 0) > 0 && (
+              <StatBar label="🗡️ PIERCE" value={(stats.armorPierce ?? 0) * multiplier} max={maxStats.def * 0.1} color="bg-red-400" />
+            )}
+            {(stats.shieldWall ?? 0) > 0 && (
+              <StatBar label="🏰 WALL"  value={(stats.shieldWall ?? 0) * multiplier}  max={maxStats.def * 0.1}  color="bg-blue-400" />
+            )}
+            {(stats.magicShield ?? 0) > 0 && (
+              <StatBar label="🔰 MWALL" value={(stats.magicShield ?? 0) * multiplier} max={maxStats.mDef * 0.1} color="bg-cyan-400" />
+            )}
+            {(stats.lifesteal ?? 0) > 0 && (
+              <StatBar label="🩸 DRAIN" value={(stats.lifesteal ?? 0) * multiplier}  max={maxStats.hp * 0.05}  color="bg-red-600" />
+            )}
+            {(stats.aoeDamage ?? 0) > 0 && (
+              <StatBar label="💥 AOE"   value={(stats.aoeDamage ?? 0) * multiplier}  max={maxStats.hp * 0.01}  color="bg-fuchsia-500" />
+            )}
+            {(stats.rally ?? 0) > 0 && (
+              <StatBar label="📯 RALLY" value={(stats.rally ?? 0) * multiplier}      max={maxStats.hp * 0.1}   color="bg-amber-300" />
             )}
           </div>
         </div>

@@ -12,6 +12,7 @@ export const GAME_NFTS: GameNft[] = [
   { name: "Dreadmane Ravager",          contractAddress: "0xfaf9a6b6409b3e69f7d3b38099b41c45bbc29ba5", chain: "base" },
   { name: "Sir Garrick Lionheart",     contractAddress: "0xea39112525f9169038435cF22f82e5436e0BCC4F", chain: "base" },
   { name: "Captain Brinebeak",        contractAddress: "0x691e4bEF9A83C00f8A35ed601090E42A8b953c77", chain: "base" },
+  { name: "Gruk Skullsplitter",         contractAddress: "0x44B374923178d4f80C3C158824F11Ac4A6D6266d", chain: "base" },
   { name: "Future Funders",             contractAddress: "0xEE67c60d0E9687BB6D4cA2D90357FC8155F3c2c8", chain: "polygon" },
   { name: "Future Funder",              contractAddress: "0xE2E9C314E1AD0764b6ef22B6408674a33F84FD41", chain: "polygon" },
   { name: "Future Funder Archibald",    contractAddress: "0x67052bFEB30203A7bEEEAD76b58f51B931Ff4d1C", chain: "polygon" },
@@ -349,7 +350,8 @@ export const STAT_TOKENS = {
       "0xace15da4edcec83c98b1fc196fc1dc44c5c429ca", // JCGWR (also DEF)
       "0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270", // WPOL
     ] as `0x${string}`[],
-    mAtk: [
+    mAtk: [] as `0x${string}`[],
+    eAtk: [
       "0xcdb4574adb7c6643153a65ee1a953afd5a189cef", // JLT-F24 (Renewable Energy Credits → electric attack)
       "0x0b31cc088cd2cd54e2dd161eb5de7b5a3e626c9e", // JLT-B23 (electric attack)
     ] as `0x${string}`[],
