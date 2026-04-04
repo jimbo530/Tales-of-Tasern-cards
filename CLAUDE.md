@@ -1,19 +1,20 @@
-# Tales of Tasern — D20 Hex RPG
+# NFT Card Game — Tales of Tasern Cards
 
-This is the **D20 hex-grid RPG** (Tales of Tasern). It is NOT the card-battle game.
+This is the **NFT card-battle game** with adventure mode. It is a standalone project.
 
-- **Branch**: `d20-stats` — all D20 RPG work goes here
-- **System**: D&D 3.5e rules + 5e spells, stats adjusted −10 (min 1) from LP-backed NFTs
-- **Chains**: Base (primary) + Polygon — NFTs stats derived from LP token holdings
-- **Shared data**: `src/lib/contracts.ts` has GAME_NFTS (shared with card game on `main`)
-- **NFT stats**: Pulled from Supabase database, computed by `/api/stats` route
-- **Spell system**: Dual-edition (3.5 + 5e), 5e concentration for all spells
-- **Battle**: Hex-grid tactical combat in `src/lib/hexCombat.ts` + `src/hooks/useHexBattle.ts`
-- **World**: Hex world map with multi-party exploration, faction rep, follower system
-- **Economy**: Food-based pyramid, coin weight, carry capacity
+- **Branch**: `main`
+- **Chains**: Base (primary) + Polygon — NFT stats derived from LP token holdings
+- **Shared data**: `src/lib/contracts.ts` synced from `../nft-lp-database/` via `npm run sync-contracts`
+- **NFT stats**: Computed by `/api/stats` route from on-chain LP data
+- **Adventure mode**: Map-based encounters in `src/components/AdventureMode.tsx`
+- **Card battles**: `src/components/CardBattleBoard.tsx` + `src/components/BattleView.tsx`
+- **Matchmaking**: `src/components/Matchmaking.tsx` — Supabase lobbies
 - **Deploy contracts**: Always use localhost HTML pages in `public/deploy-*.html` with embedded bytecode (never Remix/CLI)
 
-The card-battle game is on the `main` branch of this same repo. Never merge code between branches.
+## Related projects (separate repos, never merge)
+- **D20 Hex RPG**: `C:\Users\bigji\Documents\Tales-of-Tasern`
+- **Shared NFT/LP DB**: `C:\Users\bigji\Documents\nft-lp-database`
+- **Marketplace**: `C:\Users\bigji\Documents\nft-marketplace`
 
 @AGENTS.md
 
