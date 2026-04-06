@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useAccount, usePublicClient } from "wagmi";
 import { base, polygon } from "viem/chains";
 import { ERC1155_ABI, GAME_NFTS } from "@/lib/contracts";
+import type { ActiveBoon } from "@/lib/impactBoons";
 
 const TOKEN_ID = BigInt(1);
 const MAX_TOKEN_ID = 200;
@@ -66,6 +67,7 @@ export type NftCharacter = {
   owned: boolean;
   ownedCount: number;
   stats: { attack: number; mAtk: number; eAtk: number; fAtk: number; def: number; mDef: number; hp: number; healing: number; armorPierce: number; shieldWall: number; magicShield: number; lifesteal: number; aoeDamage: number; rally: number; charMultiplier: number; magicMultiplier: number; mana: number };
+  boons: ActiveBoon[];
   tokenAmounts: TokenAmount[];
   usdBacking: number;
 };
@@ -205,6 +207,7 @@ export function useNftStats() {
           owned: (ownershipMap.get(c.contractAddress.toLowerCase()) ?? 0) > 0,
           ownedCount: ownershipMap.get(c.contractAddress.toLowerCase()) ?? 0,
           stats: c.stats,
+          boons: c.boons ?? [],
           tokenAmounts: c.tokenAmounts ?? [],
           usdBacking: c.usdBacking ?? 0,
         }));
@@ -282,7 +285,7 @@ export function useNftStats() {
         tokenId: TOKEN_ID, metadataUri: c.metadataUri, imageUrl: c.imageUrl,
         owned: (ownershipMap.get(c.contractAddress.toLowerCase()) ?? 0) > 0,
         ownedCount: ownershipMap.get(c.contractAddress.toLowerCase()) ?? 0,
-        stats: c.stats, tokenAmounts: c.tokenAmounts ?? [], usdBacking: c.usdBacking ?? 0,
+        stats: c.stats, boons: c.boons ?? [], tokenAmounts: c.tokenAmounts ?? [], usdBacking: c.usdBacking ?? 0,
       }));
       setCharacters(updated);
       if (data.assetTotals) setAssetTotals(data.assetTotals);

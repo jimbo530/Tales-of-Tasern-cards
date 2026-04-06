@@ -81,13 +81,14 @@ function SlotPortrait({ character }: { character: NftCharacter }) {
   );
 }
 
-function GridView({ units, label, color, onCellClick, selectedUnit, validMoves }: {
+function GridView({ units, label, color, onCellClick, selectedUnit, validMoves, facingRight }: {
   units: CombatUnit[];
   label: string;
   color: string;
   onCellClick?: (pos: number, unit: CombatUnit | null) => void;
   selectedUnit?: number | null;
   validMoves?: Set<number>;
+  facingRight?: boolean;
 }) {
   const grid: (CombatUnit | null)[] = Array(9).fill(null);
   units.forEach(u => { if (u.gridPos >= 0 && u.gridPos < 9) grid[u.gridPos] = u; });
@@ -95,7 +96,7 @@ function GridView({ units, label, color, onCellClick, selectedUnit, validMoves }
   return (
     <div className="flex flex-col items-center gap-1">
       <p className="text-xs tracking-widest uppercase" style={{ color, fontSize: '0.5rem' }}>{label}</p>
-      <div className="grid grid-cols-3 gap-1" style={{ width: 226 }}>
+      <div className="grid grid-rows-3 grid-flow-col gap-1" style={{ width: 226, direction: facingRight ? 'rtl' : 'ltr' }}>
         {grid.map((unit, pos) => {
           const isSelected = selectedUnit !== null && unit?.index === selectedUnit;
           const isValidMove = validMoves?.has(pos) ?? false;
@@ -105,6 +106,7 @@ function GridView({ units, label, color, onCellClick, selectedUnit, validMoves }
               onClick={() => onCellClick?.(pos, unit)}
               className="rounded-lg flex flex-col items-center justify-center transition-all relative overflow-hidden"
               style={{
+                direction: 'ltr',
                 width: 72, height: 72,
                 background: isSelected ? 'rgba(96,165,250,0.2)' : isValidMove ? 'rgba(74,222,128,0.1)' : unit ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.015)',
                 border: `2px solid ${isSelected ? 'rgba(96,165,250,0.7)' : isValidMove ? 'rgba(74,222,128,0.5)' : unit ? `${color}33` : 'rgba(255,255,255,0.05)'}`,
@@ -137,7 +139,7 @@ function GridView({ units, label, color, onCellClick, selectedUnit, validMoves }
           );
         })}
       </div>
-      <p style={{ fontSize: '0.4rem', color: 'rgba(255,255,255,0.15)' }}>Front ← → Back</p>
+      <p style={{ fontSize: '0.4rem', color: 'rgba(255,255,255,0.15)' }}>{facingRight ? 'Back ← → Front' : 'Front ← → Back'}</p>
       {(() => {
         const reserves = units.filter(u => u.gridPos === -1 && u.currentHp > 0);
         return reserves.length > 0 ? (
@@ -249,6 +251,7 @@ function PartyCombat({ players: initPlayers, enemies: initEnemies, onWin, onLose
           onCellClick={phase === "move" && !fighting && !done ? handlePlayerGridClick : undefined}
           selectedUnit={selectedUnit}
           validMoves={phase === "move" ? validMoves : undefined}
+          facingRight
         />
         <div className="text-2xl" style={{ color: 'rgba(201,168,76,0.3)' }}>⚔️</div>
         <GridView units={enemies} label="Enemies" color="rgba(220,38,38,0.5)" />
@@ -417,9 +420,9 @@ function PartyPicker({ characters, onStart, onBack, isAdmin, unlockedNpcs, maxPa
       {/* 3x3 Formation Grid */}
       <div className="flex flex-col items-center gap-1">
         <p className="text-xs tracking-widest uppercase" style={{ color: 'rgba(201,168,76,0.3)', fontSize: '0.5rem' }}>
-          ← FRONT (enemies) &nbsp;&nbsp;&nbsp;&nbsp; BACK (safe) →
+          BACK (safe) ← &nbsp;&nbsp;&nbsp;&nbsp; → FRONT (enemies)
         </p>
-        <div className="grid grid-cols-3 gap-2" style={{ width: 240 }}>
+        <div className="grid grid-rows-3 grid-flow-col gap-2" style={{ width: 240, direction: 'rtl' }}>
           {slots.map((hero, i) => {
             const isSelected = selectedSlot === i;
             const row = Math.floor(i / 3);
@@ -429,6 +432,7 @@ function PartyPicker({ characters, onStart, onBack, isAdmin, unlockedNpcs, maxPa
                 onClick={() => hero ? clearSlot(i) : setSelectedSlot(isSelected ? null : i)}
                 className="rounded-lg flex flex-col items-center justify-center cursor-pointer transition-all relative overflow-hidden"
                 style={{
+                  direction: 'ltr',
                   width: 74, height: 74,
                   background: hero ? 'rgba(201,168,76,0.15)' : isSelected ? 'rgba(96,165,250,0.15)' : 'rgba(255,255,255,0.03)',
                   border: `2px solid ${hero ? 'rgba(201,168,76,0.6)' : isSelected ? 'rgba(96,165,250,0.6)' : 'rgba(255,255,255,0.1)'}`,

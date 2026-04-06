@@ -81,7 +81,7 @@ function formatAmount(n: number): string {
 }
 
 export function CharacterCard({ character, maxStats, selectable, selected, onSelect }: Props) {
-  const { name, metadataUri, stats, contractAddress, tokenId, owned, tokenAmounts } = character;
+  const { name, metadataUri, stats, contractAddress, tokenId, owned, tokenAmounts, boons } = character;
   const multiplier = 1 + stats.charMultiplier;
   const magicMult = 1 + stats.magicMultiplier;
   const attack = stats.attack * multiplier;
@@ -291,6 +291,54 @@ export function CharacterCard({ character, maxStats, selectable, selected, onSel
               <StatBar label="📯 RALLY" value={(stats.rally ?? 0) * multiplier}      max={maxStats.hp * 0.1}   color="bg-amber-300" />
             )}
           </div>
+
+          {/* Impact Boons */}
+          {boons && boons.length > 0 && (
+            <div className="px-3 pb-2 flex-shrink-0">
+              <div className="flex items-center gap-1 mb-1">
+                <div className="flex-1 h-px" style={{ background: 'rgba(74,222,128,0.15)' }} />
+                <span style={{ color: 'rgba(74,222,128,0.4)', fontSize: '0.45rem' }} className="tracking-widest uppercase font-bold">
+                  Impact Boons
+                </span>
+                <div className="flex-1 h-px" style={{ background: 'rgba(74,222,128,0.15)' }} />
+              </div>
+              <div className="flex flex-wrap gap-1">
+                {boons.map((boon) => (
+                  <div
+                    key={boon.groupId}
+                    className="group relative flex items-center gap-0.5 px-1.5 py-0.5 rounded"
+                    style={{
+                      background: 'rgba(74,222,128,0.08)',
+                      border: '1px solid rgba(74,222,128,0.2)',
+                      fontSize: '0.6rem',
+                    }}
+                  >
+                    <span>{boon.icon}</span>
+                    <span className="font-bold" style={{ color: 'rgba(74,222,128,0.8)' }}>
+                      T{boon.tier}
+                    </span>
+                    {/* Tooltip */}
+                    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1.5 rounded opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity z-50 whitespace-nowrap"
+                      style={{
+                        background: 'rgba(10,8,15,0.95)',
+                        border: '1px solid rgba(74,222,128,0.3)',
+                        minWidth: '140px',
+                      }}>
+                      <div className="font-bold text-xs" style={{ color: 'rgba(74,222,128,0.9)' }}>
+                        {boon.tierName}
+                      </div>
+                      <div style={{ color: 'rgba(200,190,210,0.7)', fontSize: '0.55rem' }}>
+                        {boon.groupName}
+                      </div>
+                      <div className="mt-0.5" style={{ color: 'rgba(232,213,176,0.8)', fontSize: '0.55rem' }}>
+                        {boon.description}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* ── BACK ──────────────────────────────────────────────────────── */}

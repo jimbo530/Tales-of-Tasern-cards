@@ -22,8 +22,18 @@ function drawCards(player: PlayerState, count: number): PlayerState {
 }
 
 function makeBoardCard(character: NftCharacter): BoardCard {
-  const stats = computeStats(character.stats);
-  return { character, stats, currentHp: stats.hp, maxHp: stats.hp, burns: [] };
+  // Flatten all boon effects (tier-stacked) for fast combat lookups
+  const allBoonEffects = (character.boons ?? []).flatMap(b => b.allEffects);
+  const stats = computeStats(character.stats, allBoonEffects);
+  return {
+    character,
+    stats,
+    boons: character.boons ?? [],
+    boonEffects: allBoonEffects,
+    currentHp: stats.hp,
+    maxHp: stats.hp,
+    burns: [],
+  };
 }
 
 function applyDamageToBoard(board: Board, damage: Map<string, number>): Board {
@@ -185,9 +195,9 @@ function reducer(state: GameState, action: GameAction): GameState {
       const [p1, p2] = state.players;
       const result = resolveCombat(p1.board, p2.board);
 
-      // Apply damage to the boards returned by combat (which have updated burn state)
-      const newBoard1 = applyDamageToBoard(result.newBoard1, result.board1Damage);
-      const newBoard2 = applyDamageToBoard(result.newBoard2, result.board2Damage);
+      // Combat engine already applies damage with boon survival mechanics (last_stand, revive, etc.)
+      const newBoard1 = result.newBoard1;
+      const newBoard2 = result.newBoard2;
       const newFortress1 = Math.max(0, p1.fortressHp - result.fortress1Dmg);
       const newFortress2 = Math.max(0, p2.fortressHp - result.fortress2Dmg);
 

@@ -81,6 +81,12 @@ function MiniCard({ card, onClick, highlight }: { card: BoardCard; onClick?: () 
         {card.stats.fAtk > 0 && <span>🔥{card.stats.fAtk.toFixed(0)}</span>}
         {card.stats.def > 0 && <span>🛡️{card.stats.def.toFixed(0)}</span>}
       </div>
+      {card.boons && card.boons.length > 0 && (
+        <div className="flex justify-center gap-0.5 mt-0.5" style={{ fontSize: '0.5rem' }}
+          title={card.boons.map(b => `${b.icon} ${b.tierName}`).join('\n')}>
+          {card.boons.map(b => <span key={b.groupId}>{b.icon}</span>)}
+        </div>
+      )}
     </div>
   );
 }

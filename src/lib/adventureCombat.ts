@@ -1,5 +1,6 @@
 import { computeStats, type ComputedStats } from "./battleStats";
 import type { NftCharacter } from "@/hooks/useNftStats";
+import type { BoonEffect } from "./impactBoons";
 
 export type CombatUnit = {
   character: NftCharacter;
@@ -10,6 +11,12 @@ export type CombatUnit = {
   index: number;
   burns: number[]; // fire DoT
   gridPos: number; // 0-8 position on 3x3 grid (0=front-left, 2=front-right, 6=back-left, 8=back-right)
+  // Boon combat state
+  boonEffects: BoonEffect[];
+  lastStandUsed: boolean;
+  reviveUsed: boolean;
+  burstHealUsed: boolean;
+  damageShieldRemaining: number;
 };
 
 export type CombatEvent = {
@@ -22,11 +29,79 @@ export type CombatEvent = {
 };
 
 export function makeUnit(char: NftCharacter, isPlayer: boolean, index: number): CombatUnit {
-  const stats = computeStats(char.stats);
-  // All characters fight at their real on-chain stats — no buffs or debuffs
-  const s = stats;
-  return { character: char, stats: s, currentHp: s.hp, maxHp: s.hp, isPlayer, index, burns: [], gridPos: -1 };
+  const allBoonEffects: BoonEffect[] = (char.boons ?? []).flatMap(b => b.allEffects);
+  const stats = computeStats(char.stats, allBoonEffects);
+  return {
+    character: char, stats, currentHp: stats.hp, maxHp: stats.hp,
+    isPlayer, index, burns: [], gridPos: -1,
+    boonEffects: allBoonEffects,
+    lastStandUsed: false, reviveUsed: false, burstHealUsed: false,
+    damageShieldRemaining: 0,
+  };
 }
+
+// ─── Boon Helpers ─────────────────────────────────────────────────────────────
+
+function hasBoon(unit: CombatUnit, type: string): boolean {
+  return unit.boonEffects.some(e => e.type === type);
+}
+
+function getBoonSum(unit: CombatUnit, type: string, field: string): number {
+  return unit.boonEffects
+    .filter(e => e.type === type)
+    .reduce((sum, e) => sum + ((e as Record<string, unknown>)[field] as number ?? 0), 0);
+}
+
+function getElementalResist(unit: CombatUnit): number {
+  if (hasBoon(unit, "elemental_immune")) return 1;
+  return Math.min(1, getBoonSum(unit, "elemental_resist", "pct"));
+}
+
+/** Reduce incoming damage through elemental resist and damage shield */
+function reduceDamage(target: CombatUnit, dmg: number, isElemental: boolean): number {
+  if (isElemental) {
+    const resist = getElementalResist(target);
+    if (resist >= 1) return 0;
+    if (resist > 0) dmg *= (1 - resist);
+  }
+  if (target.damageShieldRemaining > 0) {
+    const absorbed = Math.min(dmg, target.damageShieldRemaining);
+    target.damageShieldRemaining -= absorbed;
+    dmg -= absorbed;
+  }
+  return dmg;
+}
+
+/** Check survival boons after taking damage */
+function checkSurvival(target: CombatUnit, events: CombatEvent[]): void {
+  // Burst heal: once per battle when dropping below 50% HP
+  if (!target.burstHealUsed && target.currentHp > 0 && target.currentHp < target.maxHp * 0.5) {
+    const healPct = getBoonSum(target, "burst_heal", "hpPct");
+    if (healPct > 0) {
+      const heal = target.maxHp * healPct;
+      target.currentHp = Math.min(target.maxHp, target.currentHp + heal);
+      target.burstHealUsed = true;
+      events.push({ attackerName: "\u{1F49A} Burst Heal", targetName: target.character.name, damage: heal, damageType: "physical", targetHpAfter: target.currentHp, killed: false });
+    }
+  }
+  // Last stand: survive lethal hit at 1 HP once
+  if (target.currentHp <= 0 && !target.lastStandUsed && hasBoon(target, "last_stand")) {
+    target.currentHp = 1;
+    target.lastStandUsed = true;
+    events.push({ attackerName: "\u26A1 Last Stand", targetName: target.character.name, damage: 0, damageType: "physical", targetHpAfter: 1, killed: false });
+  }
+  // Revive: come back at X% HP once
+  if (target.currentHp <= 0 && !target.reviveUsed) {
+    const reviveHpPct = getBoonSum(target, "revive", "hpPct");
+    if (reviveHpPct > 0) {
+      target.currentHp = Math.floor(target.maxHp * reviveHpPct);
+      target.reviveUsed = true;
+      events.push({ attackerName: "\u2728 Revive", targetName: target.character.name, damage: 0, damageType: "physical", targetHpAfter: target.currentHp, killed: false });
+    }
+  }
+}
+
+// ─── D20 & Grid Helpers ──────────────────────────────────────────────────────
 
 /** Roll 1-20: 1=miss, 20=crit (2x), else normal */
 function rollD20(): { roll: number; mult: number; label: string } {
@@ -40,9 +115,6 @@ function rollD20(): { roll: number; mult: number; label: string } {
 function isFlanking(attacker: CombatUnit, opponents: CombatUnit[]): boolean {
   if (attacker.gridPos < 0) return false;
   const col = gridCol(attacker.gridPos);
-  const row = gridRow(attacker.gridPos);
-  // Flanking if no opponent in the same column in a row closer to attacker (between attacker and target)
-  // Simplified: flanking if no opponent in front row of attacker's column
   const blocking = opponents.filter(o =>
     o.currentHp > 0 && o.gridPos >= 0 &&
     gridCol(o.gridPos) === col && gridRow(o.gridPos) === 0
@@ -55,7 +127,6 @@ function calcDamage(attacker: ComputedStats, defender: ComputedStats): {
 } {
   const attackerHasSpecial = attacker.mAtk > 0 || attacker.eAtk > 0 || attacker.fAtk > 0;
   const defenderHasSpecial = defender.mAtk > 0 || defender.eAtk > 0 || defender.fAtk > 0;
-  // Armor piercing reduces effective defense (PKT passive)
   const pierce = attacker.armorPierce;
   const effectiveDef = defender.def * (1 - pierce);
   const effectiveMDef = (defenderHasSpecial ? defender.mDef : defender.mDef + defender.mana) * (1 - pierce);
@@ -93,7 +164,6 @@ function pickForwardTarget(attacker: CombatUnit, enemies: CombatUnit[]): CombatU
   const alive = enemies.filter(e => e.currentHp > 0 && e.gridPos >= 0);
   if (alive.length === 0) return pickTargetByHp(enemies);
 
-  // Priority: same column front row, then same column any row, then adjacent columns, then any
   const sameColFront = alive.filter(e => gridCol(e.gridPos) === col && gridRow(e.gridPos) === 0);
   if (sameColFront.length > 0) return sameColFront.reduce((a, b) => a.currentHp < b.currentHp ? a : b);
 
@@ -115,17 +185,18 @@ function pickTargetByHp(enemies: CombatUnit[]): CombatUnit | null {
 
 /** Can this unit attack? Must be in front row (row 0) or no one in front of them */
 export function canAttack(unit: CombatUnit, allies: CombatUnit[]): boolean {
-  if (unit.gridPos < 0) return true; // no grid = legacy mode
+  if (unit.gridPos < 0) return true;
   const row = gridRow(unit.gridPos);
-  if (row === 0) return true; // front row always attacks
-  // Can attack if no alive ally is in any row ahead in the same column
+  if (row === 0) return true;
   const col = gridCol(unit.gridPos);
   const aliveAhead = allies.filter(a =>
     a.currentHp > 0 && a.gridPos >= 0 && a.index !== unit.index &&
     gridCol(a.gridPos) === col && gridRow(a.gridPos) < row
   );
-  return aliveAhead.length === 0; // attack if column ahead is clear
+  return aliveAhead.length === 0;
 }
+
+// ─── Combat Resolution ───────────────────────────────────────────────────────
 
 /** Resolve one full round of combat
  * @param targetMap — maps player index to enemy index they want to attack. If not provided, auto-targets lowest HP.
@@ -136,10 +207,10 @@ export function resolveRound(
   targetMap?: Map<number, number>,
 ): { events: CombatEvent[]; players: CombatUnit[]; enemies: CombatUnit[] } {
   const events: CombatEvent[] = [];
-  let p = players.map(u => ({ ...u, burns: [...u.burns] }));
-  let e = enemies.map(u => ({ ...u, burns: [...u.burns] }));
+  const p = players.map(u => ({ ...u, burns: [...u.burns], boonEffects: [...u.boonEffects] }));
+  const e = enemies.map(u => ({ ...u, burns: [...u.burns], boonEffects: [...u.boonEffects] }));
 
-  // Rally (DDD) — shares % of all 4 stats to every ally on the grid, divided by 4
+  // ── Rally (DDD) — shares % of all 4 stats to every ally on the grid, divided by 4 ──
   for (const units of [p, e]) {
     for (const u of units) {
       if (u.currentHp <= 0 || u.gridPos < 0 || !u.stats.rally || u.stats.rally <= 0) continue;
@@ -161,7 +232,7 @@ export function resolveRound(
     }
   }
 
-  // Shield Wall (LGP) — shares DEF to allies in the same column (vertical line)
+  // ── Shield Wall (LGP) — shares DEF to allies in the same column ──
   for (const units of [p, e]) {
     for (const u of units) {
       if (u.currentHp <= 0 || u.gridPos < 0 || !u.stats.shieldWall || u.stats.shieldWall <= 0) continue;
@@ -176,7 +247,7 @@ export function resolveRound(
     }
   }
 
-  // Magic Shield (IGS) — shares MDEF to allies in the same row (horizontal line)
+  // ── Magic Shield (IGS) — shares MDEF to allies in the same row ──
   for (const units of [p, e]) {
     for (const u of units) {
       if (u.currentHp <= 0 || u.gridPos < 0 || !u.stats.magicShield || u.stats.magicShield <= 0) continue;
@@ -191,7 +262,46 @@ export function resolveRound(
     }
   }
 
-  // Resolve healing — heal self, overflow to adjacent allies
+  // ── Row/Col Buff Auras (impact boons) ──
+  const NON_STAT_AURAS: Record<string, (pct: number) => BoonEffect> = {
+    damage_shield: (pct) => ({ type: "damage_shield", pct }),
+    elemental_resist: (pct) => ({ type: "elemental_resist", pct }),
+    regen: (pct) => ({ type: "regen", hpPct: pct }),
+  };
+  for (const units of [p, e]) {
+    for (const u of units) {
+      if (u.currentHp <= 0 || u.gridPos < 0) continue;
+      for (const eff of u.boonEffects) {
+        if (eff.type !== "row_buff" && eff.type !== "col_buff") continue;
+        const matchFn = eff.type === "row_buff"
+          ? (a: CombatUnit) => gridRow(a.gridPos) === gridRow(u.gridPos)
+          : (a: CombatUnit) => gridCol(a.gridPos) === gridCol(u.gridPos);
+        for (const ally of units) {
+          if (ally === u || ally.currentHp <= 0 || ally.gridPos < 0 || !matchFn(ally)) continue;
+          const factory = NON_STAT_AURAS[eff.stat];
+          if (factory) {
+            ally.boonEffects.push(factory(eff.pct));
+          } else {
+            const current = (ally.stats as Record<string, unknown>)[eff.stat];
+            if (typeof current === "number") {
+              ally.stats = { ...ally.stats, [eff.stat]: current * (1 + eff.pct) };
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // ── Damage Shield Setup (reset each round) ──
+  for (const units of [p, e]) {
+    for (const u of units) {
+      if (u.currentHp <= 0) continue;
+      const shieldPct = getBoonSum(u, "damage_shield", "pct");
+      u.damageShieldRemaining = shieldPct > 0 ? u.maxHp * shieldPct : 0;
+    }
+  }
+
+  // ── Healing — heal self, overflow to adjacent allies ──
   for (const units of [p, e]) {
     for (let i = 0; i < units.length; i++) {
       const u = units[i];
@@ -202,9 +312,8 @@ export function resolveRound(
         const selfHeal = Math.min(healAmt, missing);
         u.currentHp += selfHeal;
         healAmt -= selfHeal;
-        if (selfHeal > 0) events.push({ attackerName: "💚 Heal", targetName: u.character.name, damage: selfHeal, damageType: "physical", targetHpAfter: u.currentHp, killed: false });
+        if (selfHeal > 0) events.push({ attackerName: "\u{1F49A} Heal", targetName: u.character.name, damage: selfHeal, damageType: "physical", targetHpAfter: u.currentHp, killed: false });
       }
-      // Overflow to adjacent allies
       if (healAmt > 0) {
         for (const adj of [i - 1, i + 1]) {
           if (adj < 0 || adj >= units.length || healAmt <= 0) continue;
@@ -215,14 +324,14 @@ export function resolveRound(
             const adjHeal = Math.min(healAmt, allyMissing);
             ally.currentHp += adjHeal;
             healAmt -= adjHeal;
-            if (adjHeal > 0) events.push({ attackerName: "💚 Heal", targetName: ally.character.name, damage: adjHeal, damageType: "physical", targetHpAfter: ally.currentHp, killed: false });
+            if (adjHeal > 0) events.push({ attackerName: "\u{1F49A} Heal", targetName: ally.character.name, damage: adjHeal, damageType: "physical", targetHpAfter: ally.currentHp, killed: false });
           }
         }
       }
     }
   }
 
-  // AOE Damage (DHG) — hits every enemy on the grid
+  // ── AOE Damage (DHG) — hits every enemy on the grid ──
   const aoePairs: [CombatUnit[], CombatUnit[]][] = [[p, e], [e, p]];
   for (const [attackers, defenders] of aoePairs) {
     for (const u of attackers) {
@@ -231,175 +340,208 @@ export function resolveRound(
       for (const target of defenders) {
         if (target.currentHp <= 0 || target.gridPos < 0) continue;
         target.currentHp = Math.max(0, target.currentHp - dmg);
-        events.push({ attackerName: `💥 ${u.character.name}`, targetName: target.character.name, damage: dmg, damageType: "mana", targetHpAfter: target.currentHp, killed: target.currentHp <= 0 });
+        events.push({ attackerName: `\u{1F4A5} ${u.character.name}`, targetName: target.character.name, damage: dmg, damageType: "mana", targetHpAfter: target.currentHp, killed: target.currentHp <= 0 });
       }
     }
   }
 
-  // Resolve burns — each entry is one tick of one fire stack, all tick simultaneously
+  // ── Burn Resolution — respects elemental resist/immune ──
   for (const units of [p, e]) {
     for (let i = 0; i < units.length; i++) {
       const u = units[i];
       if (u.currentHp <= 0 || u.burns.length === 0) continue;
-      // Sum all active burn ticks for this round
-      const totalBurn = u.burns.reduce((sum, b) => sum + b, 0);
-      // Each burn stack loses one tick (remove one entry per stack)
-      // burns is stored as groups of 3: [d,d,d, d,d,d, ...] — each fire hit adds 3 ticks
-      // Decrement: remove one tick from each active fire (every 3rd starting from end)
-      // Simpler: just pop one entry per stack. Since each hit pushes 3, we track by counting.
-      // Actually the simplest correct approach: each entry = 1 tick. All tick this round, then remove them.
-      // But we want stacking: hit1 adds [10,10,10], hit2 adds [15,15,15] → burns = [10,10,10,15,15,15]
-      // This round: total = 10+10+10+15+15+15 = 75? No, that's wrong — should be 10+15=25 this round.
-      //
-      // Better model: burns = array of { dmg, ticksLeft }
-      // But to keep it simple with the number[] format:
-      // Store as pairs: burns[i] = damage for that specific tick
-      // Each fire hit pushes 3 ticks at that damage
-      // Each round, we take the FIRST tick from each group-of-3 and sum them
-      //
-      // Simplest correct fix: burns = each element is one remaining tick.
-      // All elements tick this round (sum them all), then decrement by removing one per original-fire-group.
-      //
-      // Actually let's just sum all and remove one from each: stride through removing every element
-      // with the same damage value once... this is getting complicated.
-      //
-      // Clean approach: just sum all burn values, then remove one tick per distinct fire source.
-      // Since we push 3 identical values per fire hit, group by value, tick once per group.
-      const stacks = new Map<number, number>(); // dmg -> count
+      // Immune: clear all burns, skip damage
+      if (hasBoon(u, "elemental_immune")) {
+        u.burns = [];
+        continue;
+      }
+      const stacks = new Map<number, number>();
       for (const b of u.burns) stacks.set(b, (stacks.get(b) || 0) + 1);
       let stackDmg = 0;
       const remaining: number[] = [];
       for (const [dmg, count] of stacks) {
-        stackDmg += dmg; // each stack does its damage once this round
-        for (let t = 0; t < count - 1; t++) remaining.push(dmg); // remove one tick per stack
+        stackDmg += dmg;
+        for (let t = 0; t < count - 1; t++) remaining.push(dmg);
       }
       u.burns = remaining;
+      // Elemental resist reduces burn damage
+      const resist = Math.min(1, getBoonSum(u, "elemental_resist", "pct"));
+      if (resist > 0) stackDmg *= (1 - resist);
+      // Damage shield absorbs burn damage too
+      if (u.damageShieldRemaining > 0) {
+        const absorbed = Math.min(stackDmg, u.damageShieldRemaining);
+        u.damageShieldRemaining -= absorbed;
+        stackDmg -= absorbed;
+      }
       u.currentHp = Math.max(0, u.currentHp - stackDmg);
       events.push({
-        attackerName: `🔥 Burn (×${stacks.size})`, targetName: u.character.name,
+        attackerName: `\u{1F525} Burn (\u00D7${stacks.size})`, targetName: u.character.name,
         damage: stackDmg, damageType: "burn", targetHpAfter: u.currentHp, killed: u.currentHp <= 0,
       });
+      checkSurvival(u, events);
     }
   }
 
-  // Players attack enemies — all units attack every round, grid affects targeting
-  for (const player of p) {
-    if (player.currentHp <= 0) continue;
-    // Use player-chosen target if available, fall back to forward-target
-    let target: CombatUnit | null = null;
-    if (targetMap && targetMap.has(player.index)) {
-      const chosenIdx = targetMap.get(player.index)!;
-      const chosen = e[chosenIdx];
-      target = chosen && chosen.currentHp > 0 ? chosen : pickForwardTarget(player, e);
-    } else {
-      target = pickForwardTarget(player, e);
-    }
-    if (!target) break;
+  // ── Attack Phase ──
+  // Shared attack logic for both sides — handles all damage types, boon effects, and splash
+  function executeAttack(
+    attacker: CombatUnit,
+    opponents: CombatUnit[],
+    chooseTarget: () => CombatUnit | null,
+  ) {
+    if (attacker.currentHp <= 0) return;
+    const target = chooseTarget();
+    if (!target) return;
 
-    // D20 roll
     const { roll, mult, label } = rollD20();
     if (mult === 0) {
-      events.push({ attackerName: `🎲${roll} ${player.character.name}`, targetName: target.character.name, damage: 0, damageType: "physical", targetHpAfter: target.currentHp, killed: false });
-      continue;
+      events.push({ attackerName: `\u{1F3B2}${roll} ${attacker.character.name}`, targetName: target.character.name, damage: 0, damageType: "physical", targetHpAfter: target.currentHp, killed: false });
+      return;
     }
 
-    // Flank check: no enemy in front row of attacker's column = 1.5x
-    const flanking = isFlanking(player, e);
+    const flanking = isFlanking(attacker, opponents);
     const flankMult = flanking ? 1.5 : 1;
     const totalMult = mult * flankMult;
-    const rollPrefix = `🎲${roll}${label ? ` ${label}` : ""}${flanking ? " FLANK" : ""} `;
+    const rollPrefix = `\u{1F3B2}${roll}${label ? ` ${label}` : ""}${flanking ? " FLANK" : ""} `;
 
-    const dmg = calcDamage(player.stats, target.stats);
+    const dmg = calcDamage(attacker.stats, target.stats);
+    let totalDealt = 0;
 
-    // Physical
+    // Physical — not elemental, only reduced by damage shield
     if (dmg.phys > 0) {
-      const d = dmg.phys * totalMult;
+      let d = reduceDamage(target, dmg.phys * totalMult, false);
       target.currentHp = Math.max(0, target.currentHp - d);
-      events.push({ attackerName: rollPrefix + player.character.name, targetName: target.character.name, damage: d, damageType: "physical", targetHpAfter: target.currentHp, killed: target.currentHp <= 0 });
+      totalDealt += d;
+      events.push({ attackerName: rollPrefix + attacker.character.name, targetName: target.character.name, damage: d, damageType: "physical", targetHpAfter: target.currentHp, killed: target.currentHp <= 0 });
     }
-    // Magic (force) — straight damage, no splash
+
+    // Magic (force) — elemental, reduced by resist + shield
     if (dmg.magic > 0) {
-      const d = dmg.magic * totalMult;
+      let d = reduceDamage(target, dmg.magic * totalMult, true);
       target.currentHp = Math.max(0, target.currentHp - d);
-      events.push({ attackerName: rollPrefix + player.character.name, targetName: target.character.name, damage: d, damageType: "mana", targetHpAfter: target.currentHp, killed: target.currentHp <= 0 });
+      totalDealt += d;
+      events.push({ attackerName: rollPrefix + attacker.character.name, targetName: target.character.name, damage: d, damageType: "mana", targetHpAfter: target.currentHp, killed: target.currentHp <= 0 });
     }
-    // Electric — also hits adjacent enemy (JLT tokens only)
+
+    // Electric — elemental, splashes to adjacent (or ALL with splash_all boon)
     if (dmg.electric > 0) {
-      const d = dmg.electric * totalMult;
+      const rawElec = dmg.electric * totalMult;
+      let d = reduceDamage(target, rawElec, true);
       target.currentHp = Math.max(0, target.currentHp - d);
-      events.push({ attackerName: rollPrefix + player.character.name, targetName: target.character.name, damage: d, damageType: "electric", targetHpAfter: target.currentHp, killed: target.currentHp <= 0 });
-      // Splash to adjacent column enemy only (not far column)
+      totalDealt += d;
+      events.push({ attackerName: rollPrefix + attacker.character.name, targetName: target.character.name, damage: d, damageType: "electric", targetHpAfter: target.currentHp, killed: target.currentHp <= 0 });
+      // Splash — 50% of raw damage, each splash target applies own resist
       const targetCol = target.gridPos >= 0 ? gridCol(target.gridPos) : -1;
-      const splash = e.find(x => x.currentHp > 0 && x.index !== target.index &&
-        (x.gridPos < 0 || targetCol < 0 || Math.abs(gridCol(x.gridPos) - targetCol) === 1));
-      if (splash) {
-        const splashDmg = d * 0.5;
+      const splashAll = hasBoon(attacker, "splash_all");
+      const splashTargets = opponents.filter(x =>
+        x.currentHp > 0 && x.index !== target.index &&
+        (x.gridPos < 0 || targetCol < 0 || splashAll || Math.abs(gridCol(x.gridPos) - targetCol) === 1)
+      );
+      for (const splash of splashTargets) {
+        let splashDmg = reduceDamage(splash, rawElec * 0.5, true);
         splash.currentHp = Math.max(0, splash.currentHp - splashDmg);
-        events.push({ attackerName: player.character.name, targetName: `${splash.character.name} ⚡`, damage: splashDmg, damageType: "electric", targetHpAfter: splash.currentHp, killed: splash.currentHp <= 0 });
+        events.push({ attackerName: attacker.character.name, targetName: `${splash.character.name} \u26A1`, damage: splashDmg, damageType: "electric", targetHpAfter: splash.currentHp, killed: splash.currentHp <= 0 });
+        checkSurvival(splash, events);
       }
     }
-    // Fire — initial hit + 3 ticks of burn DoT (stacks independently with other fires)
+
+    // Fire — elemental, burn DoT, optional fire_splash and dot_extend boons
     if (dmg.fire > 0) {
-      const d = dmg.fire * totalMult;
+      const rawFire = dmg.fire * totalMult;
+      let d = reduceDamage(target, rawFire, true);
       target.currentHp = Math.max(0, target.currentHp - d);
-      target.burns.push(d, d, d); // 3 burn ticks at scaled damage
-      events.push({ attackerName: rollPrefix + player.character.name, targetName: target.character.name, damage: d, damageType: "fire", targetHpAfter: target.currentHp, killed: target.currentHp <= 0 });
-    }
-    // Mana
-    if (dmg.mana > 0) {
-      const d = dmg.mana * totalMult;
-      target.currentHp = Math.max(0, target.currentHp - d);
-      events.push({ attackerName: rollPrefix + player.character.name, targetName: target.character.name, damage: d, damageType: "mana", targetHpAfter: target.currentHp, killed: target.currentHp <= 0 });
-    }
-    // Lifesteal — heal attacker for % of total damage dealt (OGC passive)
-    if (player.stats.lifesteal > 0) {
-      const totalDealt = (dmg.phys + dmg.magic + dmg.electric + dmg.fire + dmg.mana) * totalMult;
-      const stolen = Math.min(totalDealt * player.stats.lifesteal, player.maxHp - player.currentHp);
-      if (stolen > 0) {
-        player.currentHp += stolen;
-        events.push({ attackerName: "🩸 Drain", targetName: player.character.name, damage: stolen, damageType: "physical", targetHpAfter: player.currentHp, killed: false });
+      totalDealt += d;
+      // Burn ticks use raw damage — resist is applied during tick resolution
+      const extraTicks = getBoonSum(attacker, "dot_extend", "extraTurns");
+      const burnTicks = 3 + extraTicks;
+      if (!hasBoon(target, "elemental_immune")) {
+        for (let t = 0; t < burnTicks; t++) target.burns.push(rawFire);
+      }
+      events.push({ attackerName: rollPrefix + attacker.character.name, targetName: target.character.name, damage: d, damageType: "fire", targetHpAfter: target.currentHp, killed: target.currentHp <= 0 });
+      // Fire splash boon — splash to adjacent column enemies
+      if (hasBoon(attacker, "fire_splash")) {
+        const targetCol = target.gridPos >= 0 ? gridCol(target.gridPos) : -1;
+        const fireSplashTargets = opponents.filter(x =>
+          x.currentHp > 0 && x.index !== target.index && x.gridPos >= 0 &&
+          targetCol >= 0 && Math.abs(gridCol(x.gridPos) - targetCol) === 1
+        );
+        for (const splash of fireSplashTargets) {
+          const rawSplash = rawFire * 0.5;
+          let splashDmg = reduceDamage(splash, rawSplash, true);
+          splash.currentHp = Math.max(0, splash.currentHp - splashDmg);
+          if (!hasBoon(splash, "elemental_immune")) {
+            for (let t = 0; t < burnTicks; t++) splash.burns.push(rawSplash);
+          }
+          events.push({ attackerName: attacker.character.name, targetName: `${splash.character.name} \u{1F525}`, damage: splashDmg, damageType: "fire", targetHpAfter: splash.currentHp, killed: splash.currentHp <= 0 });
+          checkSurvival(splash, events);
+        }
       }
     }
+
+    // Mana — elemental
+    if (dmg.mana > 0) {
+      let d = reduceDamage(target, dmg.mana * totalMult, true);
+      target.currentHp = Math.max(0, target.currentHp - d);
+      totalDealt += d;
+      events.push({ attackerName: rollPrefix + attacker.character.name, targetName: target.character.name, damage: d, damageType: "mana", targetHpAfter: target.currentHp, killed: target.currentHp <= 0 });
+    }
+
+    // Thorns — reflect % of damage dealt back to attacker
+    const thornsPct = getBoonSum(target, "thorns", "pct");
+    if (thornsPct > 0 && totalDealt > 0 && target.currentHp > 0) {
+      const thornsDmg = totalDealt * thornsPct;
+      attacker.currentHp = Math.max(0, attacker.currentHp - thornsDmg);
+      events.push({ attackerName: "\u{1F33F} Thorns", targetName: attacker.character.name, damage: thornsDmg, damageType: "physical", targetHpAfter: attacker.currentHp, killed: attacker.currentHp <= 0 });
+      checkSurvival(attacker, events);
+    }
+
+    // Lifesteal (OGC passive) — heal attacker for % of total damage dealt
+    if (attacker.stats.lifesteal > 0 && totalDealt > 0) {
+      const stolen = Math.min(totalDealt * attacker.stats.lifesteal, attacker.maxHp - attacker.currentHp);
+      if (stolen > 0) {
+        attacker.currentHp += stolen;
+        events.push({ attackerName: "\u{1FA78} Drain", targetName: attacker.character.name, damage: stolen, damageType: "physical", targetHpAfter: attacker.currentHp, killed: false });
+      }
+    }
+
+    // Check survival boons for main target after all damage
+    checkSurvival(target, events);
   }
 
-  // Enemies attack players — all attack, grid affects targeting, with D20 and flank
-  for (const enemy of e) {
-    if (enemy.currentHp <= 0 || enemy.gridPos === -1) continue;
-    const target = pickForwardTarget(enemy, p);
-    if (!target) break;
+  // Sort units so first_strike boon holders attack first
+  const sortByFirstStrike = (units: CombatUnit[]) =>
+    [...units].sort((a, b) => {
+      const aFS = hasBoon(a, "first_strike") ? 1 : 0;
+      const bFS = hasBoon(b, "first_strike") ? 1 : 0;
+      return bFS - aFS;
+    });
 
-    const { roll, mult, label } = rollD20();
-    if (mult === 0) {
-      events.push({ attackerName: `🎲${roll} ${enemy.character.name}`, targetName: target.character.name, damage: 0, damageType: "physical", targetHpAfter: target.currentHp, killed: false });
-      continue;
-    }
-
-    const flanking = isFlanking(enemy, p);
-    const flankMult = flanking ? 1.5 : 1;
-    const totalMult = mult * flankMult;
-    const rollPrefix = `🎲${roll}${label ? ` ${label}` : ""}${flanking ? " FLANK" : ""} `;
-
-    const dmg = calcDamage(enemy.stats, target.stats);
-    const totalDmg = (dmg.phys + dmg.magic + dmg.electric + dmg.fire + dmg.mana) * totalMult;
-    target.currentHp = Math.max(0, target.currentHp - totalDmg);
-    if (dmg.fire > 0) {
-      const fireDmg = dmg.fire * totalMult;
-      target.burns.push(fireDmg, fireDmg, fireDmg);
-    }
-    events.push({
-      attackerName: rollPrefix + enemy.character.name, targetName: target.character.name,
-      damage: totalDmg, damageType: "physical", targetHpAfter: target.currentHp, killed: target.currentHp <= 0,
+  // Players attack enemies
+  for (const player of sortByFirstStrike(p)) {
+    executeAttack(player, e, () => {
+      if (targetMap && targetMap.has(player.index)) {
+        const chosenIdx = targetMap.get(player.index)!;
+        const chosen = e[chosenIdx];
+        return chosen && chosen.currentHp > 0 ? chosen : pickForwardTarget(player, e);
+      }
+      return pickForwardTarget(player, e);
     });
   }
 
-  // Bring reserves onto the grid to fill empty spots
+  // Enemies attack players
+  for (const enemy of sortByFirstStrike(e)) {
+    if (enemy.gridPos === -1) continue;
+    executeAttack(enemy, p, () => pickForwardTarget(enemy, p));
+  }
+
+  // ── Bring reserves onto the grid to fill empty spots ──
   const occupiedEnemyPos = new Set(e.filter(u => u.currentHp > 0 && u.gridPos >= 0).map(u => u.gridPos));
   const backfillPositions = [1, 0, 2, 4, 3, 5, 7, 6, 8].filter(pos => !occupiedEnemyPos.has(pos));
   for (const reserve of e) {
     if (reserve.gridPos !== -1 || reserve.currentHp <= 0 || backfillPositions.length === 0) continue;
     reserve.gridPos = backfillPositions.shift()!;
     events.push({
-      attackerName: "📢 Reinforcement", targetName: reserve.character.name,
+      attackerName: "\u{1F4E2} Reinforcement", targetName: reserve.character.name,
       damage: 0, damageType: "physical", targetHpAfter: reserve.currentHp, killed: false,
     });
   }
@@ -424,7 +566,7 @@ export function generateEnemies(
       const npc = allCharacters.find(c => c.contractAddress.toLowerCase() === addr.toLowerCase());
       if (npc) {
         const unit = makeUnit(npc, false, i);
-        unit.gridPos = i < 9 ? positions[i] : -1; // reserves off-grid
+        unit.gridPos = i < 9 ? positions[i] : -1;
         units.push(unit);
       }
     });
@@ -436,7 +578,7 @@ export function generateEnemies(
     const npc = allCharacters.find(c => c.contractAddress.toLowerCase() === npcAddress.toLowerCase());
     if (npc) {
       const unit = makeUnit(npc, false, 0);
-      unit.gridPos = 1; // front-center
+      unit.gridPos = 1;
       return [unit];
     }
   }
@@ -456,7 +598,7 @@ export function generateEnemies(
   }
 
   // Place enemies on grid: fill front row first, then mid
-  const enemyPositions = [1, 0, 2, 4, 3, 5, 7, 6, 8]; // center-first placement
+  const enemyPositions = [1, 0, 2, 4, 3, 5, 7, 6, 8];
   return pool.slice(0, enemyCount).map((char, i) => {
     const unit = makeUnit(char, false, i);
     unit.gridPos = enemyPositions[i] ?? i;

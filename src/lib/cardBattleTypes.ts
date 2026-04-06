@@ -1,5 +1,6 @@
 import type { NftCharacter } from "@/hooks/useNftStats";
 import type { ComputedStats } from "./battleStats";
+import type { ActiveBoon, BoonEffect } from "@/lib/impactBoons";
 
 export type PlayerID = 1 | 2;
 
@@ -14,9 +15,17 @@ export type Phase =
 export type BoardCard = {
   character: NftCharacter;
   stats: ComputedStats;
+  boons: ActiveBoon[];
+  /** Flattened list of all active boon effects (tier-stacked) for fast combat lookups */
+  boonEffects: BoonEffect[];
   currentHp: number;
   maxHp: number;
   burns: number[]; // pending fire DoT damage for future turns
+  /** Boon state flags — tracked per battle */
+  lastStandUsed?: boolean;
+  reviveUsed?: boolean;
+  burstHealUsed?: boolean;
+  damageShieldRemaining?: number; // resets each turn
 };
 
 // board[col][row] — row 0 = back, row 1 = front

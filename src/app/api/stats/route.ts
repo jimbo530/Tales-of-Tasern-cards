@@ -2,6 +2,7 @@ import { createPublicClient, http, formatUnits } from "viem";
 import { base, polygon } from "viem/chains";
 import { GAME_NFTS, KNOWN_LP_PAIRS, V2_PAIR_ABI, ERC1155_ABI, STAT_TOKENS, type GameNft } from "@/lib/contracts";
 import { NextResponse } from "next/server";
+import { resolveImpactBoons, type ActiveBoon } from "@/lib/impactBoons";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300; // Allow up to 5 minutes for RPC calls
@@ -568,10 +569,20 @@ export async function GET() {
         }
       }
 
+      // Resolve impact boons from raw token holdings
+      const rawHoldings = new Map<string, number>();
+      for (const [addr, amount] of tokenMap.entries()) {
+        if (amount === 0n) continue;
+        const decimals = tokenPriceConfig[addr]?.decimals ?? 18;
+        rawHoldings.set(addr, parseFloat(formatUnits(amount, decimals)));
+      }
+      const boons = resolveImpactBoons(rawHoldings, tokenUsdPrices);
+
       return {
         name: nft.name,
         contractAddress: nft.contractAddress,
         chain: nft.chain,
+        boons,
         stats: {
           attack,
           mAtk,

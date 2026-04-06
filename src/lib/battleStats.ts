@@ -1,4 +1,5 @@
 import type { NftCharacter } from "@/hooks/useNftStats";
+import type { BoonEffect } from "@/lib/impactBoons";
 
 export type ComputedStats = {
   attack: number;
@@ -18,10 +19,19 @@ export type ComputedStats = {
   mana: number;
 };
 
-export function computeStats(raw: NftCharacter["stats"]): ComputedStats {
+/**
+ * Compute final stats from raw NFT stats, then layer on boon stat modifiers.
+ * Boon effects of type stat_pct / stat_flat / magic_boost are applied here.
+ * Combat-only effects (thorns, last_stand, etc.) are handled in cardBattleCombat.
+ */
+export function computeStats(
+  raw: NftCharacter["stats"],
+  boonEffects: BoonEffect[] = [],
+): ComputedStats {
   const multiplier = 1 + raw.charMultiplier;
   const magicMult = 1 + raw.magicMultiplier;
-  return {
+
+  const base: ComputedStats = {
     attack: raw.attack * multiplier,
     mAtk:   raw.mAtk * multiplier * magicMult,
     eAtk:   (raw.eAtk ?? 0) * multiplier * magicMult,
@@ -38,4 +48,29 @@ export function computeStats(raw: NftCharacter["stats"]): ComputedStats {
     rally: (raw.rally ?? 0) * multiplier * 0.05,
     mana:   raw.mana * multiplier,
   };
+
+  // Apply boon stat modifiers on top of base
+  for (const effect of boonEffects) {
+    if (effect.type === "stat_pct") {
+      const key = effect.stat as keyof ComputedStats;
+      if (key in base) {
+        (base as any)[key] += (base as any)[key] * effect.pct;
+      }
+    } else if (effect.type === "stat_flat") {
+      const key = effect.stat as keyof ComputedStats;
+      if (key in base) {
+        (base as any)[key] += effect.value;
+      }
+    } else if (effect.type === "magic_boost") {
+      // Boost all magic stats
+      base.mAtk += base.mAtk * effect.pct;
+      base.eAtk += base.eAtk * effect.pct;
+      base.mana += base.mana * effect.pct;
+    } else if (effect.type === "regen") {
+      // Add boon regen to existing healing stat
+      base.healing += base.hp * effect.hpPct;
+    }
+  }
+
+  return base;
 }
