@@ -7,6 +7,7 @@ import { useNftImage } from "@/hooks/useNftImage";
 import { ADVENTURE_CHAPTERS, REGIONS } from "@/lib/adventureData";
 import { getCachedPins, loadPinsFromLocal, hydrateMapPins, type MapPin } from "@/lib/mapPins";
 import { buildAdjacency, type MapNode, type RegionMapData } from "@/lib/mapGraph";
+import { MapLayer } from "@/components/MapLayer";
 import type { NftCharacter } from "@/hooks/useNftStats";
 import { makeUnit, resolveRound, generateEnemies, getValidMoves, canAttack, gridRow, gridCol, type CombatUnit, type CombatEvent } from "@/lib/adventureCombat";
 
@@ -1452,42 +1453,27 @@ export function AdventureMode({ characters, onExit, onStatsRefresh }: Props) {
             return rd?.name ?? id;
           }).join(' > ');
 
+          const regionBgStyle: React.CSSProperties = bgImage
+            ? { backgroundImage: `url(${bgImage})`, backgroundSize: 'cover', backgroundPosition: 'center' }
+            : { background: 'linear-gradient(135deg, #1a1520 0%, #12101a 40%, #0d0a10 100%)' };
+
           return (
           <div className="fixed inset-0" style={{ zIndex: 50, background: '#0a0608' }}>
-            <div className="absolute inset-0 overflow-hidden touch-none"
+            <MapLayer
+              pos={regionPos}
+              zoom={regionZoom}
+              dragging={regionDragging}
               onWheel={handleRegionWheel}
               onPointerDown={handleRegionPointerDown}
               onPointerMove={handleRegionPointerMove}
               onPointerUp={handleRegionPointerUp}
-              style={{ cursor: regionDragging ? 'grabbing' : 'grab' }}>
-              <div style={{
-                position: 'absolute',
-                left: '50%', top: '50%',
-                transform: `translate(calc(-50% + ${regionPos.x}px), calc(-50% + ${regionPos.y}px)) scale(${regionZoom})`,
-                transition: regionDragging ? 'none' : 'transform 0.1s ease-out',
-                width: '90vmin',
-                ...(bgImage ? {
-                  aspectRatio: '1 / 1',
-                  backgroundImage: `url(${bgImage})`,
-                  backgroundSize: 'cover',
-                  backgroundPosition: 'center',
-                } : {
-                  aspectRatio: '1 / 1',
-                  background: 'linear-gradient(135deg, #1a1520 0%, #12101a 40%, #0d0a10 100%)',
-                }),
-              }}>
-
-                {/* Road paths connecting adjacent nodes */}
-                <svg className="absolute inset-0 w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none" style={{ pointerEvents: 'none' }}>
-                  {regionEdges.map(([aId, bId], i) => {
-                    const a = regionNodes.find(n => n.id === aId);
-                    const b = regionNodes.find(n => n.id === bId);
-                    if (!a || !b) return null;
-                    return <line key={i} x1={a.x} y1={a.y} x2={b.x} y2={b.y}
-                      stroke="rgba(139,119,79,0.4)" strokeWidth="0.5" strokeDasharray="1 0.5" strokeLinecap="round" />;
-                  })}
-                </svg>
-
+              backgroundStyle={regionBgStyle}
+              nodes={regionNodes}
+              edges={regionEdges}
+              lineColor="rgba(139,119,79,0.4)"
+              partyNodeId={partyPos}
+              renderPartyToken={partyToken}
+            >
                 {/* All map nodes */}
                 {regionNodes.map((node) => {
                   const isHere = partyPos === node.id;
@@ -1645,15 +1631,7 @@ export function AdventureMode({ characters, onExit, onStatsRefresh }: Props) {
                     </div>
                   );
                 })}
-
-                {/* Party token — shows current position */}
-                {(() => {
-                  const partyNode = regionNodes.find(n => n.id === partyPos);
-                  if (!partyNode) return null;
-                  return partyToken(partyNode.x, partyNode.y - 4);
-                })()}
-              </div>
-            </div>
+            </MapLayer>
 
             {/* Top bar with breadcrumb */}
             <div className="absolute top-4 left-1/2 -translate-x-1/2 flex flex-col items-center gap-1" style={{ zIndex: 51 }}>
