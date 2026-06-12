@@ -36,8 +36,10 @@ function DownloadImages({ characters }: { characters: NftCharacter[] }) {
     let failed = 0;
     for (const c of characters) {
       if (!c.metadataUri) { failed++; continue; }
+      const httpUri = toHttp(c.metadataUri);
+      if (!httpUri) { failed++; continue; }
       try {
-        const url = await resolveImage(toHttp(c.metadataUri));
+        const url = await resolveImage(httpUri);
         if (url) {
           const ok = await downloadAndCache(c.contractAddress, url);
           if (ok) done++;

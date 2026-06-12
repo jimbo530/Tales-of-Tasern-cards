@@ -26,7 +26,9 @@ export function useNftImage(metadataUri?: string, contractAddress?: string) {
       }
 
       // Resolve from network
-      const url = await resolveImage(toHttp(metadataUri!));
+      const httpUri = toHttp(metadataUri!);
+      if (!httpUri) { setImgFailed(true); return; }
+      const url = await resolveImage(httpUri);
       if (cancelled) return;
       if (!url) { setImgFailed(true); return; }
       setImageUrl(url);
