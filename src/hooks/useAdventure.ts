@@ -23,7 +23,8 @@ export type AdventureState = {
   encounterCooldowns: Record<string, number>;
   unlockedNpcs: string[]; // contract addresses of NPCs unlocked via joinsParty
   phase: "map" | "story" | "battle" | "reward" | "chapterComplete" | "victory";
-  mapPosition: string; // current node id on the Londa map
+  mapPosition: string; // current node id within the active region
+  regionStack: string[]; // map drill path, e.g. ["world","londa","newbsberd"]; last = active region
   inventory: InventoryItem[];
   carryCapacity: number; // max total weight the party can carry
 };
@@ -44,6 +45,7 @@ function defaultState(): AdventureState {
     unlockedNpcs: [],
     phase: "map",
     mapPosition: "leaving-home",
+    regionStack: ["world"],
     inventory: [],
     carryCapacity: 50, // base carry capacity (weight units)
   };
@@ -252,6 +254,12 @@ export function useAdventure(wallet?: string) {
     update(s => ({ ...s, mapPosition: pos }));
   }
 
+  // Persist the map drill path so reload restores the player's region (not world).
+  function setRegionStack(stack: string[]) {
+    const safe = Array.isArray(stack) && stack.length > 0 ? stack : ["world"];
+    update(s => ({ ...s, regionStack: safe }));
+  }
+
   // Inventory helpers
   function currentWeight(): number {
     return (state.inventory ?? []).reduce((sum, item) => sum + item.quantity * item.weight, 0);
@@ -329,6 +337,7 @@ export function useAdventure(wallet?: string) {
     encounterOnCooldown,
     encounterCooldownRemaining,
     setMapPosition,
+    setRegionStack,
     addItem,
     removeItem,
     hasItem,

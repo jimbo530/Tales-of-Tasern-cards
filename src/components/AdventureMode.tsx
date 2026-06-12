@@ -830,13 +830,36 @@ const INTRO_TEXT = "At the heart of a quiet crossroads village, where warm lante
 export function AdventureMode({ characters, onExit, onStatsRefresh }: Props) {
   const { address } = useAccount();
   const { data: walletClient } = useWalletClient();
-  const { state, loaded, introSeen, chapter, encounter, chapters, markIntroSeen, startChapter, startEncounter, startBattle, winBattle, loseBattle, nextEncounter, backToMap, resetAdventure, skipLevel, skipEncounter, isOnCooldown, cooldownRemaining, encounterOnCooldown, encounterCooldownRemaining, setMapPosition, addItem, removeItem, hasItem, currentWeight } = useAdventure(address);
+  const { state, loaded, introSeen, chapter, encounter, chapters, markIntroSeen, startChapter, startEncounter, startBattle, winBattle, loseBattle, nextEncounter, backToMap, resetAdventure, skipLevel, skipEncounter, isOnCooldown, cooldownRemaining, encounterOnCooldown, encounterCooldownRemaining, setMapPosition, setRegionStack: persistRegionStack, addItem, removeItem, hasItem, currentWeight } = useAdventure(address);
 
-  // Region stack: navigation hierarchy (world > londa > leaving-home > ...)
+  // Region stack: navigation hierarchy (world > londa > leaving-home > ...).
+  // Local state drives the UI; it is seeded from the saved stack once on load
+  // and mirrored back to the persistent store on every change (see effects below)
+  // so a reload restores the player's region instead of snapping to the world.
   const [regionStack, setRegionStack] = useState<string[]>(["world"]);
   const regionStackRef = useRef(regionStack);
   regionStackRef.current = regionStack;
   const currentRegion = regionStack[regionStack.length - 1];
+
+  // Seed local stack from the saved state exactly once, after the save loads.
+  const regionStackSeeded = useRef(false);
+  useEffect(() => {
+    if (regionStackSeeded.current || !loaded) return;
+    regionStackSeeded.current = true;
+    const saved = state.regionStack;
+    if (Array.isArray(saved) && saved.length > 0) setRegionStack(saved);
+  }, [loaded, state.regionStack]);
+
+  // Persist local stack changes back to the save (only after seeding, so we
+  // never clobber the saved stack with the initial ["world"] before load).
+  // persistRegionStack is re-created each render, so call it through a ref and
+  // depend only on the stack value — otherwise this effect would run every render.
+  const persistRegionStackRef = useRef(persistRegionStack);
+  persistRegionStackRef.current = persistRegionStack;
+  useEffect(() => {
+    if (!regionStackSeeded.current) return;
+    persistRegionStackRef.current(regionStack);
+  }, [regionStack]);
 
   // Cached region maps — built lazily from editor pins / adventureData
   const regionMapCache = useRef<Record<string, RegionMapData>>({});
@@ -1032,7 +1055,8 @@ export function AdventureMode({ characters, onExit, onStatsRefresh }: Props) {
       const ch = chapters[node.chapterIdx];
       if (ch && !encounterOnCooldown(ch.id, node.encounterIdx)) {
         startEncounter(node.chapterIdx, node.encounterIdx);
-        setRegionStack(["world"]); // collapse back to world on fight
+        // Keep the region stack intact so the player returns here after the
+        // fight (the story/battle screens render over the map regardless).
         setPickingParty(true);
       }
     }
@@ -1421,7 +1445,7 @@ export function AdventureMode({ characters, onExit, onStatsRefresh }: Props) {
         </p>
 
         {state.mftEarned > 0 && (
-          <button onClick={resetAdventure} className="absolute bottom-4 right-4 px-3 py-1 rounded text-xs font-bold"
+          <button onClick={() => { resetAdventure(); setRegionStack(["world"]); }} className="absolute bottom-4 right-4 px-3 py-1 rounded text-xs font-bold"
             style={{ background: 'rgba(220,38,38,0.2)', color: 'rgba(220,38,38,0.5)', border: '1px solid rgba(220,38,38,0.2)', zIndex: 10 }}>
             Reset
           </button>
@@ -1584,7 +1608,7 @@ export function AdventureMode({ characters, onExit, onStatsRefresh }: Props) {
                               const ch = chapters[node.chapterIdx];
                               if (ch && !encounterOnCooldown(ch.id, node.encounterIdx)) {
                                 startEncounter(node.chapterIdx, node.encounterIdx);
-                                setRegionStack(["world"]);
+                                // Stay in-region so the player returns here post-fight.
                                 setPickingParty(true);
                               }
                             }
