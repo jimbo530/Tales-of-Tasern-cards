@@ -59,7 +59,9 @@ function loadLocal(): AdventureState {
       const parsed = JSON.parse(saved);
       return { ...defaultState(), ...parsed };
     }
-  } catch {}
+  } catch (e) {
+    console.warn("[useAdventure] failed to parse local save, using defaults:", e);
+  }
   return defaultState();
 }
 
@@ -91,7 +93,9 @@ export function useAdventure(wallet?: string) {
             setLoaded(true);
             return;
           }
-        } catch {}
+        } catch (e) {
+          console.warn("[useAdventure] cloud load failed, falling back to local save:", e);
+        }
       }
       if (!cancelled) {
         setState(local);
