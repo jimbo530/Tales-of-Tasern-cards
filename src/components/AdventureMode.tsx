@@ -5,6 +5,7 @@ import { useAccount, useWalletClient } from "wagmi";
 import { useAdventure } from "@/hooks/useAdventure";
 import { useNftImage } from "@/hooks/useNftImage";
 import { ADVENTURE_CHAPTERS, REGIONS } from "@/lib/adventureData";
+import { getCachedPins, loadPinsFromLocal, hydrateMapPins, type MapPin } from "@/lib/mapPins";
 import type { NftCharacter } from "@/hooks/useNftStats";
 import { makeUnit, resolveRound, generateEnemies, getValidMoves, canAttack, gridRow, gridCol, type CombatUnit, type CombatEvent } from "@/lib/adventureCombat";
 
@@ -547,18 +548,16 @@ type RegionMapData = {
 // Set of region IDs for quick lookup
 const REGION_IDS = new Set(REGIONS.map(r => r.id));
 
-// Build a map for ANY region — reads editor pins from localStorage, falls back to adventureData
+// Build a map for ANY region. Pin source priority (see src/lib/mapPins.ts):
+//   1. in-memory cache (hydrated from Supabase — shared across all players)
+//   2. localStorage (this browser's edits)
+//   3. adventureData.ts mapPin (committed baseline) — handled further below
 function buildRegionMap(regionId: string): RegionMapData {
-  type EditorPin = { id: string; title: string; x: number; y: number; region: string; requires: string[]; isRegion?: boolean; regionId?: string; color: string };
-  let editorPins: EditorPin[] = [];
-  if (typeof window !== 'undefined') {
-    try {
-      const saved = localStorage.getItem("map-pin-editor-pins");
-      if (saved) {
-        editorPins = (JSON.parse(saved) as EditorPin[]).filter(p => p.region === regionId);
-      }
-    } catch { /* ignore */ }
-  }
+  type EditorPin = MapPin;
+  // getCachedPins() is non-null once hydrateMapPins() has run (cloud or local);
+  // before that we read localStorage directly so behaviour matches the baseline.
+  const allPins = getCachedPins() ?? loadPinsFromLocal() ?? [];
+  const editorPins: EditorPin[] = allPins.filter(p => p.region === regionId);
 
   // Chapter lookup by id
   const chapterById = new Map<string, { ch: typeof ADVENTURE_CHAPTERS[0]; idx: number }>();
@@ -853,6 +852,19 @@ export function AdventureMode({ characters, onExit, onStatsRefresh }: Props) {
   useEffect(() => {
     const t = setInterval(() => forceUpdate(n => n + 1), 1000);
     return () => clearInterval(t);
+  }, []);
+
+  // Hydrate shared map pins from Supabase once on mount. Until this resolves the
+  // map renders from localStorage/adventureData (baseline). When cloud or local
+  // pins arrive, drop the region-map cache and re-render so they take effect.
+  useEffect(() => {
+    let cancelled = false;
+    hydrateMapPins().then(source => {
+      if (cancelled || source === "none") return;
+      regionMapCache.current = {};
+      forceUpdate(n => n + 1);
+    });
+    return () => { cancelled = true; };
   }, []);
   const isAdmin = ADMIN_WALLETS.includes(address?.toLowerCase() ?? "");
   const [party, setParty] = useState<NftCharacter[]>([]);

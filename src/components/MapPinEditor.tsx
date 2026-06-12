@@ -1,18 +1,15 @@
 "use client";
 import { useState, useRef, useCallback, useEffect } from "react";
 import { ADVENTURE_CHAPTERS, REGIONS, type Chapter, type Region } from "@/lib/adventureData";
+import {
+  PINS_STORAGE_KEY,
+  savePinsToLocal,
+  loadPinsFromCloud,
+  savePinsEverywhere,
+  type MapPin,
+} from "@/lib/mapPins";
 
-type Pin = {
-  id: string;
-  title: string;
-  x: number;
-  y: number;
-  region: string;
-  requires: string[];
-  color: string;
-  isRegion?: boolean; // true = this pin represents a child region, not a chapter
-  regionId?: string;  // which region this pin links to when clicked
-};
+type Pin = MapPin;
 
 const PIN_COLORS = [
   "#e63946", "#f4a261", "#2a9d8f", "#264653",
@@ -156,7 +153,7 @@ function RegionTree({ regions, pins, activeRegion, selectedPin, onNavigate, onSe
 let nextPinId = 100;
 
 export function MapPinEditor() {
-  const STORAGE_KEY = "map-pin-editor-pins";
+  const STORAGE_KEY = PINS_STORAGE_KEY;
 
   const [pins, setPins] = useState<Pin[]>(() => {
     if (typeof window !== "undefined") {
@@ -189,7 +186,9 @@ export function MapPinEditor() {
           }
           return fresh;
         }
-      } catch { /* ignore */ }
+      } catch (e) {
+        console.warn("[MapPinEditor] failed to load saved pins, using defaults:", e);
+      }
     }
     return buildPins(ADVENTURE_CHAPTERS, REGIONS);
   });
@@ -205,13 +204,42 @@ export function MapPinEditor() {
   const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null);
   const boardRef = useRef<HTMLDivElement>(null);
 
+  // Publish-to-cloud status: null = idle, otherwise a short message to show.
+  const [cloudStatus, setCloudStatus] = useState<string | null>(null);
+  const [publishing, setPublishing] = useState(false);
+
   // Keep ref in sync so board-level handler always sees latest value
   useEffect(() => { addingPathRef.current = addingPath; }, [addingPath]);
 
-  // Auto-save pins to localStorage
+  // Auto-save pins to localStorage on every change (instant local persistence).
   useEffect(() => {
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(pins)); } catch { /* ignore */ }
+    savePinsToLocal(pins);
   }, [pins]);
+
+  // On mount, pull the shared pin set from the cloud so the editor opens in sync
+  // with what every player sees. Cloud wins over the local copy if present.
+  useEffect(() => {
+    let cancelled = false;
+    loadPinsFromCloud().then(cloud => {
+      if (cancelled || !cloud || cloud.length === 0) return;
+      setPins(cloud);
+      setCloudStatus("Loaded shared pins from cloud");
+      setTimeout(() => { if (!cancelled) setCloudStatus(null); }, 3000);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  // Publish the current pins to Supabase so they persist for EVERY player.
+  async function publishToCloud() {
+    setPublishing(true);
+    setCloudStatus("Publishing to cloud...");
+    const ok = await savePinsEverywhere(pins);
+    setPublishing(false);
+    setCloudStatus(ok
+      ? "Published! All players will see these pins."
+      : "Cloud save failed — saved locally only. Run supabase-map-pins.sql?");
+    setTimeout(() => setCloudStatus(null), 5000);
+  }
 
   // Track mouse position on board for path preview
   const handleBoardMouseMove = useCallback((e: React.MouseEvent) => {
@@ -354,11 +382,44 @@ export function MapPinEditor() {
     if (selectedPin === oldId) setSelectedPin(newId);
   };
 
+  // mapPin patch snippets for pins that ALREADY map to a chapter — paste the
+  // mapPin line into the matching chapter in adventureData.ts (or just Publish).
   const generateCode = () => {
     return pins.filter(p => !p.isRegion).map(p => {
       const requires = p.requires.length > 0
         ? `    requires: [${p.requires.map(r => `"${r}"`).join(", ")}],\n` : "";
       return `  // ${p.title}\n  "${p.id}": {\n${requires}    mapPin: { x: ${p.x}, y: ${p.y}, region: "${p.region}" },\n  }`;
+    }).join(",\n\n");
+  };
+
+  // Full, paste-ready Chapter objects for NEW pins that don't have a chapter yet.
+  // This is how you author a brand-new level: place a pin, then paste this block
+  // into ADVENTURE_CHAPTERS in src/lib/adventureData.ts and fill in the story.
+  const generateNewChapterCode = () => {
+    const existingIds = new Set(ADVENTURE_CHAPTERS.map(ch => ch.id));
+    const newPins = pins.filter(p => !p.isRegion && !existingIds.has(p.id));
+    if (newPins.length === 0) return "";
+    return newPins.map(p => {
+      const requires = p.requires.length > 0
+        ? `    requires: [${p.requires.map(r => `"${r}"`).join(", ")}],\n` : "";
+      return `  {
+    id: "${p.id}",
+    title: "${p.title}",
+    intro: "TODO: write the scene the player reads on arrival.",
+    image: "/adventure-level1.webp",
+${requires}    mapPin: { x: ${p.x}, y: ${p.y}, region: "${p.region}" },
+    encounters: [
+      {
+        name: "${p.title}",
+        description: "TODO: describe this fight.",
+        aiDeckBias: "balanced",
+        aiStrength: 0.6,
+        mftReward: 800,
+        npcAddresses: ["0x0000000000000000000000000000000000000000"],
+      },
+    ],
+    completionBonus: 500,
+  }`;
     }).join(",\n\n");
   };
 
@@ -415,9 +476,29 @@ export function MapPinEditor() {
               style={{ background: "rgba(220,38,38,0.2)", color: "#f87171", border: "1px solid rgba(220,38,38,0.3)" }}>
               Reset
             </button>
-            <span className="text-xs" style={{ color: "rgba(74,222,128,0.5)" }}>auto-saved</span>
+            <span className="text-xs" style={{ color: "rgba(240,208,112,0.3)" }}>|</span>
+            <button onClick={publishToCloud} disabled={publishing}
+              className="px-3 py-1 rounded text-sm font-black"
+              style={{
+                background: publishing ? "rgba(74,222,128,0.15)" : "#4ade80",
+                color: publishing ? "#4ade80" : "#0a0608",
+                border: "1px solid #2a9d8f",
+                cursor: publishing ? "default" : "pointer",
+                opacity: publishing ? 0.7 : 1,
+              }}
+              title="Save all pins to the shared cloud so every player sees them">
+              {publishing ? "Publishing..." : "Publish to Cloud"}
+            </button>
+            <span className="text-xs" style={{ color: "rgba(74,222,128,0.5)" }}>auto-saved local</span>
           </div>
         </div>
+
+        {/* Cloud publish status */}
+        {cloudStatus && (
+          <div className="text-xs font-bold mt-1" style={{ color: "#4ade80" }}>
+            {cloudStatus}
+          </div>
+        )}
 
         {/* Breadcrumb navigation */}
         <div className="flex items-center gap-1 text-sm">
@@ -645,8 +726,34 @@ export function MapPinEditor() {
         <div className="w-80 overflow-y-auto" style={{ background: "rgba(10,6,8,0.95)", borderLeft: "2px solid #8b6914" }}>
           {showJson ? (
             <div className="p-4">
+              <p className="text-xs mb-3" style={{ color: "rgba(240,208,112,0.55)", lineHeight: 1.4 }}>
+                Pins auto-save locally and publish to the cloud with the green
+                button — you usually do not need to copy anything. Use this only
+                to bake pins into the code.
+              </p>
+
+              {/* Full chapter scaffold for brand-new levels */}
+              {generateNewChapterCode() && (
+                <div className="mb-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <h2 className="text-sm font-bold" style={{ color: "#4ade80" }}>New level(s) → adventureData.ts</h2>
+                    <button onClick={() => navigator.clipboard.writeText(generateNewChapterCode())}
+                      className="px-2 py-1 rounded text-xs font-bold" style={{ background: "#4ade80", color: "#0a0608" }}>
+                      Copy
+                    </button>
+                  </div>
+                  <p className="text-xs mb-2" style={{ color: "rgba(240,208,112,0.4)" }}>
+                    Paste inside ADVENTURE_CHAPTERS, then fill in the TODOs.
+                  </p>
+                  <pre className="text-xs rounded p-3 overflow-x-auto" style={{
+                    background: "rgba(0,0,0,0.5)", color: "#4ade80",
+                    fontFamily: "'Courier New', monospace", whiteSpace: "pre-wrap", wordBreak: "break-all",
+                  }}>{generateNewChapterCode()}</pre>
+                </div>
+              )}
+
               <div className="flex items-center justify-between mb-3">
-                <h2 className="text-sm font-bold" style={{ color: "#f0d070" }}>Pin Data</h2>
+                <h2 className="text-sm font-bold" style={{ color: "#f0d070" }}>mapPin patches (existing levels)</h2>
                 <button onClick={() => navigator.clipboard.writeText(generateCode())}
                   className="px-2 py-1 rounded text-xs font-bold" style={{ background: "#8b6914", color: "#0a0608" }}>
                   Copy
