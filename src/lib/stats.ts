@@ -25,7 +25,7 @@ export async function getLpStats(
   nftTotalSupply?: bigint
 ): Promise<CharacterStats & { rawAttack: bigint; rawHp: bigint }> {
   const client = clients[chain];
-  const statTokens = STAT_TOKENS["base"];
+  const statTokens = STAT_TOKENS[chain];
 
   const [reserves, token0, token1, lpTotal, lpHeld] = await Promise.all([
     client.readContract({ address: lpPairAddress, abi: V2_PAIR_ABI, functionName: "getReserves" }),

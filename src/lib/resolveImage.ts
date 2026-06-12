@@ -5,9 +5,16 @@ const GATEWAYS = [
   "https://ipfs.io/ipfs/",
 ];
 
-export function toHttp(uri: string): string {
-  if (uri.startsWith("ipfs://")) return "https://ipfs.io/ipfs/" + uri.slice(7);
-  return uri;
+export function toHttp(uri: string): string | null {
+  let result = uri;
+  if (result.startsWith("ipfs://")) result = "https://ipfs.io/ipfs/" + result.slice(7);
+  try {
+    const proto = new URL(result).protocol;
+    if (proto !== "http:" && proto !== "https:") return null;
+  } catch {
+    return null;
+  }
+  return result;
 }
 
 function ipfsCidUrls(uri: string): string[] {
@@ -35,8 +42,8 @@ export async function resolveImage(metadataUri: string): Promise<string | null> 
   try {
     const res = await fetchFirstOk(urls);
     const meta = await res.json();
-    if (!meta?.image) return null;
-    return toHttp(meta.image as string);
+    if (!meta?.image || typeof meta.image !== "string") return null;
+    return toHttp(meta.image);
   } catch {
     return null;
   }

@@ -230,8 +230,12 @@ export function PowerUp({ characters, onBack, onStatsRefresh }: Props) {
           </p>
 
           <div className="grid grid-cols-2 gap-3">
-            {STAT_OPTIONS.filter(s => s.chain === chainTab).map(s => (
-              <button key={s.key} onClick={() => s.deployed ? setSelectedStat(s.key) : null}
+            {STAT_OPTIONS
+              // AZOS filtered out — contract needs redeployment. Re-enable by removing this filter once redeployed.
+              .filter(s => s.key !== "azos")
+              .filter(s => s.chain === chainTab).map(s => (
+              <button key={s.key} onClick={() => setSelectedStat(s.key)}
+                disabled={!s.deployed}
                 className="px-4 py-3 rounded-lg text-left transition-all relative"
                 style={{
                   background: selectedStat === s.key ? 'rgba(201,168,76,0.15)' : 'rgba(255,255,255,0.03)',

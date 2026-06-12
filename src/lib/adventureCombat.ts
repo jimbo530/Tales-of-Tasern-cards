@@ -314,17 +314,19 @@ export function resolveRound(
         healAmt -= selfHeal;
         if (selfHeal > 0) events.push({ attackerName: "\u{1F49A} Heal", targetName: u.character.name, damage: selfHeal, damageType: "physical", targetHpAfter: u.currentHp, killed: false });
       }
-      if (healAmt > 0) {
-        for (const adj of [i - 1, i + 1]) {
-          if (adj < 0 || adj >= units.length || healAmt <= 0) continue;
-          const ally = units[adj];
-          if (ally.currentHp <= 0) continue;
-          const allyMissing = ally.maxHp - ally.currentHp;
-          if (allyMissing > 0) {
-            const adjHeal = Math.min(healAmt, allyMissing);
-            ally.currentHp += adjHeal;
-            healAmt -= adjHeal;
-            if (adjHeal > 0) events.push({ attackerName: "\u{1F49A} Heal", targetName: ally.character.name, damage: adjHeal, damageType: "physical", targetHpAfter: ally.currentHp, killed: false });
+      if (healAmt > 0 && u.gridPos >= 0) {
+        const uRow = gridRow(u.gridPos);
+        const uCol = gridCol(u.gridPos);
+        for (const ally of units) {
+          if (ally === u || ally.currentHp <= 0 || ally.gridPos < 0 || healAmt <= 0) continue;
+          if (gridRow(ally.gridPos) === uRow && Math.abs(gridCol(ally.gridPos) - uCol) === 1) {
+            const allyMissing = ally.maxHp - ally.currentHp;
+            if (allyMissing > 0) {
+              const adjHeal = Math.min(healAmt, allyMissing);
+              ally.currentHp += adjHeal;
+              healAmt -= adjHeal;
+              if (adjHeal > 0) events.push({ attackerName: "\u{1F49A} Heal", targetName: ally.character.name, damage: adjHeal, damageType: "physical", targetHpAfter: ally.currentHp, killed: false });
+            }
           }
         }
       }

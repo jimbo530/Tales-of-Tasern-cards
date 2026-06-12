@@ -32,6 +32,9 @@ export type BattleState = {
 
 const TICK_MS = 1500;
 
+// Simplified 1v1 duel damage — no boons, no armor pierce, no electric.
+// The full board-combat version lives in cardBattleCombat.ts; this stays
+// separate because the tick-based duel intentionally skips those systems.
 function calcDamage(attacker: ComputedStats, defender: ComputedStats): { phys: number; magic: number; fire: number; mana: number } {
   const attackerHasSpecial = attacker.mAtk > 0 || attacker.fAtk > 0;
   const defenderHasSpecial = defender.mAtk > 0 || defender.fAtk > 0;

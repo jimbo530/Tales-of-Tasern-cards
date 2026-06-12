@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head><title>Faucet Admin — Tales of Tasern</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.1/ethers.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.1/ethers.umd.min.js" integrity="sha384-xeyyvbIlX+FahWHIZR6gjoC4A1i44cTBxZ330euRbtiXZwfcVDWVeOuJ4sGx8R2d" crossorigin="anonymous"></script>
 </head>
 <body style="background:#0a0608;color:#e8d5b0;font-family:Georgia;padding:30px;max-width:700px;margin:0 auto;">
 
@@ -72,6 +72,10 @@ const ABI = [
   {"inputs":[{"name":"amount","type":"uint256"}],"name":"withdraw","outputs":[],"stateMutability":"nonpayable","type":"function"},
 ];
 
+const ADMIN_WALLETS = [
+  '0x6829f9440e2cca42413b630992369b4e5e6a6c58',
+  '0x0780b1456d5e60cf26c8cd6541b85e805c8c05f2',
+];
 let provider, signer, contract;
 
 async function connect() {
@@ -83,6 +87,10 @@ async function connect() {
     signer = await provider.getSigner();
     contract = new ethers.Contract(FAUCET, ABI, signer);
     const addr = await signer.getAddress();
+    if (!ADMIN_WALLETS.includes(addr.toLowerCase())) {
+      document.body.innerHTML = '<h1 style="color:#f87171;text-align:center;margin-top:40vh;font-family:Georgia;">Not authorized</h1>';
+      return;
+    }
     document.getElementById('walletStatus').innerHTML = '<span style="color:#4ade80">Connected: ' + addr.slice(0,6) + '...' + addr.slice(-4) + '</span>';
     refreshInfo();
   } catch(e) { document.getElementById('walletStatus').innerHTML = '<span style="color:#f87171">' + e.message + '</span>'; }

@@ -138,7 +138,6 @@ export const GAME_NFTS: GameNft[] = [
   { name: "Depths of Grun'zhur",                contractAddress: "0x3ea4dBE46D53c5Ab6C2dCAA91F4defD0df83A406", chain: "polygon" },
   { name: "Aegorin Tidecaller",                 contractAddress: "0x54d334771EB79c5252f06F171a771ed293ab402a", chain: "polygon" },
   { name: "Eldra Leafwhisker",                  contractAddress: "0x4AEaE9DBaa897254d52f7E401D930173152c00b2", chain: "polygon" },
-  { name: "Lyrin Ripplechord",                  contractAddress: "0x22BBFFe894395075f3538F1c34a680EA43310E7f", chain: "polygon" },
   { name: "Captain Rocco Blackpaw",             contractAddress: "0x196288dbD3D0BD133110c1Af078d1C64aC88fBB0", chain: "polygon" },
   { name: "Lyriana Sunpetal",                   contractAddress: "0x6b7dc341eCf7F95924728d86c02de83Fe28C58d0", chain: "polygon" },
   { name: "Briggum the Green",                  contractAddress: "0xdB80E6733dFf19872e217Cc5348560A98aCD97c8", chain: "polygon" },
@@ -204,12 +203,16 @@ export const GAME_NFTS: GameNft[] = [
   { name: "Carbon Countin Club",                contractAddress: "0xe608b78d14e98d0b34e142acb89561e9918346b5", chain: "base" },
   { name: "Carbon Countin Club",                contractAddress: "0x9ab182d1a7b19ac6581e0f15a61b72e10beeb27d", chain: "polygon" },
   { name: "Brakka Greasefang Gutlord",          contractAddress: "0x4ada15ea83765c25ABA9aFce1C1d1b15b27C7d70", chain: "base" },
-  { name: "Mountain Ork",                      contractAddress: "0xCd43D8eB17736bFDBd8862B7e03b6B5a4ad476A2", chain: "base" },
-  { name: "Ser Bramble of Kardov's Gate",     contractAddress: "0x8A5BA476b57E473a9A3E25786d346Bd369a4233f", chain: "polygon" },
-  { name: "Varrek",                            contractAddress: "0x9DF6a0f86f4E67446A69a7455f68e16FF805A304", chain: "polygon" },
-  { name: "Elder Bramblevein",                 contractAddress: "0x352D6D5EA40Ec848A6711C29A8236e267CFAf5F8", chain: "polygon" },
-  { name: "Shillwood Forrest",                 contractAddress: "0xB9328e86C43dF81dE7de6CA409ec06CCD02ab812", chain: "polygon" },
-  { name: "Ms. Mapsly",                        contractAddress: "0x6A6A62b4EFCfAdB188642553D9D3219a738Fe23e", chain: "polygon" },
+  { name: "Mountain Ork",                       contractAddress: "0xCd43D8eB17736bFDBd8862B7e03b6B5a4ad476A2", chain: "base" },
+  { name: "Ser Bramble of Kardov's Gate",       contractAddress: "0x8A5BA476b57E473a9A3E25786d346Bd369a4233f", chain: "polygon" },
+  { name: "Varrek",                             contractAddress: "0x9DF6a0f86f4E67446A69a7455f68e16FF805A304", chain: "polygon" },
+  { name: "Elder Bramblevein",                  contractAddress: "0x352D6D5EA40Ec848A6711C29A8236e267CFAf5F8", chain: "polygon" },
+  { name: "Shillwood Forrest",                  contractAddress: "0xB9328e86C43dF81dE7de6CA409ec06CCD02ab812", chain: "polygon" },
+  { name: "Ms. Mapsly",                         contractAddress: "0x6A6A62b4EFCfAdB188642553D9D3219a738Fe23e", chain: "polygon" },
+  { name: "Master Olphin Trunkel",              contractAddress: "0x2b9641A1c023ada2De7BDfD423aC88728702700e", chain: "polygon" },
+  { name: "Mosswhisper Tallowpaw",              contractAddress: "0xC9F92bA591c816c2dE2710F872C9919E08C0c412", chain: "base" },
+  { name: "Virel Quill",                        contractAddress: "0xaeA15d04bfD9A6DCC2B7B13F4BcBBcb11B851530", chain: "base" },
+  { name: "Brakkus Thundershade",               contractAddress: "0xA80A6bF549fa41431720F680487872d7B3cF30C4", chain: "polygon" },
 ];
 // @sync-end:GAME_NFTS
 
@@ -315,6 +318,11 @@ export const KNOWN_LP_PAIRS = {
     "0x7eE2dd0022e3460177B90b8F8fa3b3a76D970FF6", // USDGLO / DDD
     "0xbA262Af3E1c559246e407C94C91F77Ff334F6a90", // EGP / DDD
     "0x43c9b0DFdaFF40c38a24850636662394EF42D03F", // PR25 / DDD
+    "0xaB9DC44b75F87f40421120e8E1228076123f2735", // PR25 / IGS
+    "0x54a326013c971f5aabf28240ffd6c1ef9d77e6f9", // PR25 / BTN
+    "0x3434a0b68d36d8ae4ffb9e2c236a680a25e9237d", // PR25 / PKT
+    "0x46b7b31cac35586673f1791025032e6ee0e2e72b", // PR25 / OGC
+    "0xd548854d8e850011bd12d0f14b326a931d8fd4c7", // PR25 / DHG
     "0x62317508308b68bd36d6e5f17e1c4055fbf99351", // OGC / PKT
   ] as `0x${string}`[],
 };

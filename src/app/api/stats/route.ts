@@ -663,6 +663,7 @@ export async function GET() {
       headers: { "Cache-Control": "public, s-maxage=3600, stale-while-revalidate=600" },
     });
   } catch (error) {
-    return NextResponse.json({ error: String(error) }, { status: 500 });
+    console.error('[API] Stats error:', error);
+    return NextResponse.json({ error: 'Failed to fetch stats' }, { status: 500 });
   }
 }

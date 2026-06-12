@@ -45,26 +45,31 @@ async function resolveUri(nft: { contractAddress: `0x${string}` }): Promise<{ ur
 }
 
 export async function GET() {
-  const results: Record<string, { metadataUri?: string; imageUrl?: string; chain?: string }> = {};
+  try {
+    const results: Record<string, { metadataUri?: string; imageUrl?: string; chain?: string }> = {};
 
-  const BATCH = 10;
-  for (let i = 0; i < GAME_NFTS.length; i += BATCH) {
-    const batch = GAME_NFTS.slice(i, i + BATCH);
-    const uris = await Promise.all(batch.map(resolveUri));
-    const images = await Promise.all(uris.map(async (u) => {
-      if (!u.uri) return null;
-      return resolveImage(u.uri);
-    }));
-    batch.forEach((nft, j) => {
-      results[nft.contractAddress.toLowerCase()] = {
-        metadataUri: uris[j].uri,
-        imageUrl: images[j] ?? undefined,
-        chain: uris[j].chain,
-      };
+    const BATCH = 10;
+    for (let i = 0; i < GAME_NFTS.length; i += BATCH) {
+      const batch = GAME_NFTS.slice(i, i + BATCH);
+      const uris = await Promise.all(batch.map(resolveUri));
+      const images = await Promise.all(uris.map(async (u) => {
+        if (!u.uri) return null;
+        return resolveImage(u.uri);
+      }));
+      batch.forEach((nft, j) => {
+        results[nft.contractAddress.toLowerCase()] = {
+          metadataUri: uris[j].uri,
+          imageUrl: images[j] ?? undefined,
+          chain: uris[j].chain,
+        };
+      });
+    }
+
+    return NextResponse.json(results, {
+      headers: { "Cache-Control": "public, s-maxage=604800, stale-while-revalidate=86400" }, // Cache 7 days
     });
+  } catch (error) {
+    console.error('[API] Images error:', error);
+    return NextResponse.json({ error: 'Failed to fetch images' }, { status: 500 });
   }
-
-  return NextResponse.json(results, {
-    headers: { "Cache-Control": "public, s-maxage=604800, stale-while-revalidate=86400" }, // Cache 7 days
-  });
 }

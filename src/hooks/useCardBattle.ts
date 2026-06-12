@@ -36,20 +36,6 @@ function makeBoardCard(character: NftCharacter): BoardCard {
   };
 }
 
-function applyDamageToBoard(board: Board, damage: Map<string, number>): Board {
-  return board.map((col, c) =>
-    col.map((card, r) => {
-      if (!card) return null;
-      const key = `${c}-${r}`;
-      const dmg = damage.get(key) ?? 0;
-      if (dmg <= 0) return card;
-      const newHp = card.currentHp - dmg;
-      if (newHp <= 0) return null; // card destroyed
-      return { ...card, currentHp: newHp };
-    })
-  );
-}
-
 const initialState: GameState = {
   phase: "setup",
   players: [

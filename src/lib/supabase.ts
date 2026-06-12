@@ -5,6 +5,10 @@ export const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
+function isValidAddress(addr: string | undefined | null): boolean {
+  return typeof addr === 'string' && /^0x[0-9a-fA-F]{40}$/.test(addr);
+}
+
 export type Lobby = {
   id: string;
   code: string;
@@ -24,6 +28,7 @@ function randomCode(): string {
 }
 
 export async function createLobby(hostWallet?: string, hostDeck?: any[]): Promise<Lobby | null> {
+  if (!isValidAddress(hostWallet)) return null;
   const code = randomCode();
   const { data, error } = await supabase
     .from("lobbies")
@@ -35,6 +40,7 @@ export async function createLobby(hostWallet?: string, hostDeck?: any[]): Promis
 }
 
 export async function joinLobby(code: string, guestWallet?: string, guestDeck?: any[]): Promise<Lobby | null> {
+  if (!isValidAddress(guestWallet)) return null;
   const { data, error } = await supabase
     .from("lobbies")
     .update({ guest_wallet: guestWallet ?? null, guest_deck: guestDeck ?? null, status: "matched" })
@@ -47,6 +53,7 @@ export async function joinLobby(code: string, guestWallet?: string, guestDeck?: 
 }
 
 export async function findRandomLobby(myWallet?: string): Promise<Lobby | null> {
+  if (!isValidAddress(myWallet)) return null;
   // Try to join an existing waiting lobby
   const { data } = await supabase
     .from("lobbies")
@@ -87,6 +94,7 @@ export type AdventureSave = {
 };
 
 export async function loadAdventureSave(wallet: string): Promise<AdventureSave | null> {
+  if (!isValidAddress(wallet)) return null;
   const { data, error } = await supabase
     .from("adventure_saves")
     .select("*")
@@ -97,6 +105,7 @@ export async function loadAdventureSave(wallet: string): Promise<AdventureSave |
 }
 
 export async function saveAdventure(wallet: string, state: any, introSeen: boolean): Promise<boolean> {
+  if (!isValidAddress(wallet)) return false;
   const { error } = await supabase
     .from("adventure_saves")
     .upsert({

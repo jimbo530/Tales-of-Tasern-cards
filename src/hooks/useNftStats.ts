@@ -243,7 +243,7 @@ export function useNftStats() {
     }
 
     load();
-  }, [address, isConnected, baseClient]);
+  }, [address, isConnected, baseClient, polygonClient]);
 
   // Refresh stats on demand (cache-busting) — use after LP deposits for instant level-up
   async function refreshStats() {

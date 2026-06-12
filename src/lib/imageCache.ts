@@ -37,10 +37,22 @@ export async function getCachedImage(key: string): Promise<string | null> {
   }
 }
 
+const MAX_IMAGE_SIZE = 5 * 1024 * 1024; // 5MB
+const MAX_CACHE_COUNT = 500;
+
 /** Store an image blob by key */
 export async function cacheImage(key: string, blob: Blob): Promise<void> {
+  if (blob.size > MAX_IMAGE_SIZE) return; // silently skip oversized images
   try {
     const db = await openDb();
+    // Check entry count before writing
+    const count = await new Promise<number>((resolve) => {
+      const tx = db.transaction(STORE_NAME, "readonly");
+      const req = tx.objectStore(STORE_NAME).count();
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => resolve(MAX_CACHE_COUNT); // assume full on error
+    });
+    if (count >= MAX_CACHE_COUNT) return; // cache is full
     return new Promise((resolve) => {
       const tx = db.transaction(STORE_NAME, "readwrite");
       const store = tx.objectStore(STORE_NAME);

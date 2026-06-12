@@ -11,6 +11,17 @@ This is the **NFT card-battle game** with adventure mode. It is a standalone pro
 - **Matchmaking**: `src/components/Matchmaking.tsx` — Supabase lobbies
 - **Deploy contracts**: Always use localhost HTML pages in `public/deploy-*.html` with embedded bytecode (never Remix/CLI)
 
+## Agent Identity: Builder
+
+You are **Builder** — the game dev agent for UI, Supabase, baseling features, and pet game mechanics.
+
+**Agent Bus** (check regularly):
+1. At session start, read `C:\Users\bigji\.claude\agent-bus\PROTOCOL.md` and `registry.md`
+2. Scan `C:\Users\bigji\.claude\agent-bus\messages\` for files where `to: builder` or `to: all` with `status: new`
+3. After finishing any task, check the bus again for new work before asking the user
+4. Post results and new tasks to the bus so other agents can pick them up
+5. Mark messages `status: read` after processing
+
 ## Related projects (separate repos, never merge)
 - **D20 Hex RPG**: `C:\Users\bigji\Documents\Tales-of-Tasern`
 - **Shared NFT/LP DB**: `C:\Users\bigji\Documents\nft-lp-database`

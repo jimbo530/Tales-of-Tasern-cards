@@ -13,8 +13,6 @@ import { base } from "wagmi/chains";
 import { useNftStats, type NftCharacter } from "@/hooks/useNftStats";
 import { CharacterCard } from "@/components/CharacterCard";
 import { BattleView } from "@/components/BattleView";
-import { CardBattleBoard } from "@/components/CardBattleBoard";
-import { Matchmaking } from "@/components/Matchmaking";
 import { AdventureMode } from "@/components/AdventureMode";
 import { PowerUp } from "@/components/PowerUp";
 import { downloadAndCache, getCacheCount, clearImageCache } from "@/lib/imageCache";
@@ -93,7 +91,7 @@ export default function Home() {
   const [search, setSearch] = useState("");
 
   // Navigation
-  const [view, setView] = useState<"menu" | "heroes" | "army" | "adventure" | "castleSiege" | "castleAI" | "matchmaking" | "1v1" | "powerUp">("menu");
+  const [view, setView] = useState<"menu" | "heroes" | "army" | "adventure" | "1v1" | "powerUp">("menu");
 
   // Cycling background images
   const BG_IMAGES = ["/bg-plains-1.webp", "/bg-plains-2.webp", "/bg-plains-3.webp", "/bg-plains-4.webp", "/bg-desert-1.webp", "/bg-desert-2.webp", "/bg-desert-3.webp", "/bg-desert-4.webp"];
@@ -328,45 +326,6 @@ export default function Home() {
       </div>
     ));
   }
-
-  if (view === "castleSiege") return subPage("Castle Siege", (
-    <div className="flex flex-col items-center gap-6 mt-12">
-      <h2 className="text-2xl font-black tracking-widest text-gold-shimmer uppercase"
-        style={{ fontFamily: "'Cinzel Decorative', 'Cinzel', serif" }}>
-        🏰 Castle Siege 🏰
-      </h2>
-      <p className="text-sm text-center" style={{ color: 'rgba(201,168,76,0.5)' }}>
-        Build your deck. Destroy the enemy fortress.
-      </p>
-      <div className="flex flex-col gap-4 w-full max-w-sm">
-        <button onClick={() => cycleView("castleAI")}
-          className="w-full px-6 py-4 rounded-lg text-sm font-black uppercase tracking-widest"
-          style={{ background: 'rgba(201,168,76,0.2)', color: '#f0d070', border: '1px solid rgba(201,168,76,0.5)', boxShadow: '0 0 15px rgba(201,168,76,0.1)' }}>
-          🤖 vs AI — Solo Play
-        </button>
-        <button onClick={() => cycleView("matchmaking")}
-          className="w-full px-6 py-4 rounded-lg text-sm font-black uppercase tracking-widest"
-          style={{ background: 'rgba(220,38,38,0.2)', color: '#fca5a5', border: '1px solid rgba(220,38,38,0.5)', boxShadow: '0 0 15px rgba(220,38,38,0.1)' }}>
-          🌐 Online — Find Opponent
-        </button>
-        <button onClick={() => cycleView("menu")}
-          className="w-full px-4 py-2 rounded text-xs font-bold uppercase tracking-widest"
-          style={{ background: 'rgba(255,255,255,0.05)', color: 'rgba(201,168,76,0.5)', border: '1px solid rgba(201,168,76,0.15)' }}>
-          ← Back
-        </button>
-      </div>
-    </div>
-  ));
-
-  if (view === "matchmaking") return subPage("Online Arena", (
-    <Matchmaking
-      characters={characters}
-      onMatchFound={() => cycleView("castleAI")}
-      onBack={() => cycleView("castleSiege")}
-    />
-  ));
-
-  if (view === "castleAI") return subPage("Card Battle", <CardBattleBoard characters={characters} onExit={() => cycleView("menu")} />);
 
   // 1v1 Battle view
   if (activeBattle) return subPage("◆ Arena ◆", (
@@ -635,15 +594,6 @@ export default function Home() {
             <span className="text-4xl">📖</span>
             <span className="text-sm font-black tracking-widest uppercase" style={{ color: 'rgba(74,222,128,0.9)' }}>Adventure</span>
             <span style={{ fontSize: '0.55rem', color: 'rgba(34,197,94,0.5)' }}>6 levels of story-driven combat</span>
-          </button>
-
-          {/* Castle Siege */}
-          <button onClick={() => cycleView("castleSiege")}
-            className="flex flex-col items-center gap-3 px-6 py-8 rounded-2xl transition-all hover:scale-[1.02]"
-            style={{ background: 'rgba(220,38,38,0.1)', border: '2px solid rgba(220,38,38,0.3)', boxShadow: '0 0 25px rgba(220,38,38,0.05)' }}>
-            <span className="text-4xl">🏰</span>
-            <span className="text-sm font-black tracking-widest uppercase" style={{ color: '#fca5a5' }}>Castle Siege</span>
-            <span style={{ fontSize: '0.55rem', color: 'rgba(220,38,38,0.5)' }}>Card battle vs AI or online</span>
           </button>
 
           {/* Marketplace (external) */}

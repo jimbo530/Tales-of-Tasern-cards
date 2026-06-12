@@ -4,6 +4,7 @@ import type { BoonEffect } from "./impactBoons";
 
 const SUPPORT_BONUS = 0.2;
 const FIRE_DOT_TURNS = 2; // fire burns for 2 additional turns after initial hit
+const MAX_DOT_EXTEND = 5; // max extra turns from stacked dot_extend boons
 
 // ─── Boon Helpers ────────────────────────────────────────────────────────────
 
@@ -30,13 +31,13 @@ function getDamageShield(card: BoardCard): number {
   return getBoonSum(card, "damage_shield", "pct");
 }
 
-/** Get extra fire DoT turns from boons */
+/** Get extra fire DoT turns from boons (capped at MAX_DOT_EXTEND) */
 function getFireExtend(card: BoardCard): number {
   let extra = 0;
   for (const e of card.boonEffects) {
     if (e.type === "dot_extend") extra += e.extraTurns;
   }
-  return extra;
+  return Math.min(extra, MAX_DOT_EXTEND);
 }
 
 /** Get total thorns % */
