@@ -6,6 +6,7 @@ import { useAdventure } from "@/hooks/useAdventure";
 import { useNftImage } from "@/hooks/useNftImage";
 import { ADVENTURE_CHAPTERS, REGIONS } from "@/lib/adventureData";
 import { getCachedPins, loadPinsFromLocal, hydrateMapPins, type MapPin } from "@/lib/mapPins";
+import { buildAdjacency, type MapNode, type RegionMapData } from "@/lib/mapGraph";
 import type { NftCharacter } from "@/hooks/useNftStats";
 import { makeUnit, resolveRound, generateEnemies, getValidMoves, canAttack, gridRow, gridCol, type CombatUnit, type CombatEvent } from "@/lib/adventureCombat";
 
@@ -532,18 +533,7 @@ const WORLD_NODES = [
 const WORLD_PATH = WORLD_NODES.map(n => n.id);
 const WORLD_LONDA_IDX = WORLD_NODES.findIndex(n => n.id === 'londa');
 
-// Generic map node + region map types (replaces old LondaNode/LondaMapData)
-type MapNode = {
-  id: string; x: number; y: number; label: string;
-  type: 'chapter' | 'encounter' | 'region' | 'travel' | 'destination' | 'placeholder' | 'exit';
-  chapterIdx?: number; encounterIdx?: number;
-  regionId?: string; // for region-type nodes: which region to drill into
-};
-type RegionMapData = {
-  nodes: MapNode[];
-  edges: [string, string][];
-  adj: Record<string, string[]>;
-};
+// MapNode + RegionMapData types and graph math live in src/lib/mapGraph.ts.
 
 // Set of region IDs for quick lookup
 const REGION_IDS = new Set(REGIONS.map(r => r.id));
@@ -762,14 +752,8 @@ function buildRegionMap(regionId: string): RegionMapData {
     }
   }
 
-  // Build bidirectional adjacency from edges
-  const adj: Record<string, string[]> = {};
-  for (const [a, b] of edges) {
-    if (!adj[a]) adj[a] = [];
-    if (!adj[b]) adj[b] = [];
-    if (!adj[a].includes(b)) adj[a].push(b);
-    if (!adj[b].includes(a)) adj[b].push(a);
-  }
+  // Build bidirectional adjacency from edges (pure helper in mapGraph.ts)
+  const adj = buildAdjacency(edges);
 
   return { nodes, edges, adj };
 }
