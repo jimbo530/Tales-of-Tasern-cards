@@ -533,6 +533,8 @@ const WORLD_NODES = [
 ];
 const WORLD_PATH = WORLD_NODES.map(n => n.id);
 const WORLD_LONDA_IDX = WORLD_NODES.findIndex(n => n.id === 'londa');
+// Road lines connect each world node to the next in sequence (the walkable path).
+const WORLD_EDGES: [string, string][] = WORLD_NODES.slice(0, -1).map((n, i) => [n.id, WORLD_NODES[i + 1].id]);
 
 // MapNode + RegionMapData types and graph math live in src/lib/mapGraph.ts.
 
@@ -1300,34 +1302,21 @@ export function AdventureMode({ characters, onExit, onStatsRefresh }: Props) {
         {floatingBack}{inventoryButton}{inventoryPanel}
 
         {/* Zoomable world map */}
-        <div className="absolute inset-0 overflow-hidden touch-none"
+        <MapLayer
+          pos={mapPos}
+          zoom={mapZoom}
+          dragging={dragging}
           onWheel={handleMapWheel}
           onPointerDown={handleMapPointerDown}
           onPointerMove={handleMapPointerMove}
           onPointerUp={handleMapPointerUp}
-          style={{ cursor: dragging ? 'grabbing' : 'grab' }}>
-          <div style={{
-            position: 'absolute',
-            left: '50%', top: '50%',
-            transform: `translate(calc(-50% + ${mapPos.x}px), calc(-50% + ${mapPos.y}px)) scale(${mapZoom})`,
-            transition: dragging ? 'none' : 'transform 0.1s ease-out',
-            width: '90vmin',
-            aspectRatio: '1 / 1',
-            backgroundImage: 'url(/world-map.jpg)',
-            backgroundSize: 'cover',
-            backgroundPosition: 'center',
-          }}>
-
-            {/* Road path connecting world nodes */}
-            <svg className="absolute inset-0 w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="none" style={{ pointerEvents: 'none' }}>
-              {WORLD_NODES.map((node, i) => {
-                if (i >= WORLD_NODES.length - 1) return null;
-                const next = WORLD_NODES[i + 1];
-                return <line key={i} x1={node.x} y1={node.y} x2={next.x} y2={next.y}
-                  stroke="rgba(139,119,79,0.3)" strokeWidth="0.5" strokeDasharray="1 0.5" strokeLinecap="round" />;
-              })}
-            </svg>
-
+          backgroundStyle={{ backgroundImage: 'url(/world-map.jpg)', backgroundSize: 'cover', backgroundPosition: 'center' }}
+          nodes={WORLD_NODES}
+          edges={WORLD_EDGES}
+          lineColor="rgba(139,119,79,0.3)"
+          partyNodeId={WORLD_NODES[worldNodeIdx]?.id ?? null}
+          renderPartyToken={partyToken}
+        >
             {/* All world nodes */}
             {WORLD_NODES.map((node, i) => {
               const isHere = worldNodeIdx === i;
@@ -1390,14 +1379,7 @@ export function AdventureMode({ characters, onExit, onStatsRefresh }: Props) {
                 </div>
               );
             })}
-
-            {/* Party token — follows worldNodeIdx */}
-            {(() => {
-              const node = WORLD_NODES[worldNodeIdx];
-              return node ? partyToken(node.x, node.y - 4) : null;
-            })()}
-          </div>
-        </div>
+        </MapLayer>
 
         {/* Top bar */}
         <div className="absolute top-4 left-1/2 -translate-x-1/2 flex items-center gap-4" style={{ zIndex: 10 }}>
